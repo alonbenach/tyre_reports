@@ -1,0 +1,26 @@
+# Environment / editor
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+
+# Data and private business artifacts
+data/
+instructions/
+reports/
+
+# Keep only logo usage instructions; ignore logo assets
+assets/logos/*
+!assets/logos/README.md
+
+# Prevent accidental commits of generated or source data files anywhere
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.pdf
+*.tsv
+
