@@ -239,6 +239,16 @@ def _draw_recap_matrix_page(fig, recap_latest: pd.DataFrame, logos_dir: Path = L
             try:
                 img = plt.imread(logo)
                 _place_logo_preserve_ratio(ax, img, bx + 0.005, y + 0.004, bw - 0.010, row_h * 0.78 - 0.008)
+                ax.text(
+                    bx + bw / 2,
+                    y + 0.01,
+                    brand.upper(),
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.5,
+                    color="#374151",
+                )
             except Exception:
                 ax.text(bx + bw / 2, y + row_h * 0.39, brand.upper(), transform=ax.transAxes, ha="center", va="center", fontsize=12)
         else:
@@ -249,6 +259,145 @@ def _draw_recap_matrix_page(fig, recap_latest: pd.DataFrame, logos_dir: Path = L
             x, w = col_x[j], col_w[j]
             ax.add_patch(Rectangle((x, y), w, row_h * 0.78, transform=ax.transAxes, facecolor="#F4F6F7", edgecolor=brand_color, lw=1.2))
             ax.text(x + w / 2, y + row_h * 0.39, val, transform=ax.transAxes, ha="center", va="center", fontsize=17, color="#566573")
+
+
+def _build_positioning_across_lines_latest(
+    silver: pd.DataFrame, latest: pd.Timestamp, brands: list[str] | None = None
+) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    if brands is None:
+        brands = list(RECAP_BRANDS)
+
+    work = silver.copy()
+    if "snapshot_date" not in work.columns or "segment_reference_group" not in work.columns:
+        return {}, brands
+
+    is_hc = work.get("is_high_confidence_match")
+    if is_hc is not None:
+        work = work[is_hc.fillna(False)]
+    work = work[work["snapshot_date"] == latest].copy()
+    work = work[work["brand"].isin(brands)].copy()
+    if work.empty:
+        return {}, brands
+
+    parsed = (
+        work["segment_reference_group"]
+        .astype("string")
+        .str.upper()
+        .str.extract(r"^(?:\s*\d+\s*-\s*)?(?P<segment>.+?)\s+(?P<line>1ST|2ND|3RD)\s*$")
+    )
+    work["segment"] = parsed["segment"].astype("string").str.strip()
+    work["line"] = parsed["line"].astype("string").str.strip()
+    work = work[work["segment"].isin(["SUPERSPORT", "SPORT TOURING RADIAL"])].copy()
+    if work.empty:
+        return {}, brands
+
+    agg = (
+        work.groupby(["segment", "line", "brand"], dropna=False)
+        .agg(price=("price_pln", "median"))
+        .reset_index()
+    )
+    bases = (
+        agg[(agg["brand"] == "Pirelli") & (agg["line"] == "1ST")][["segment", "price"]]
+        .rename(columns={"price": "pirelli_1st_price"})
+        .drop_duplicates("segment")
+    )
+    agg = agg.merge(bases, on="segment", how="left")
+    agg["index_vs_pirelli_1st"] = 100 * (agg["price"] / agg["pirelli_1st_price"])
+
+    out: dict[str, pd.DataFrame] = {}
+    for segment in ["SUPERSPORT", "SPORT TOURING RADIAL"]:
+        seg = agg[agg["segment"] == segment].copy()
+        if seg.empty:
+            continue
+        price_p = seg.pivot(index="line", columns="brand", values="price")
+        idx_p = seg.pivot(index="line", columns="brand", values="index_vs_pirelli_1st")
+        lines = ["1ST", "2ND", "3RD"]
+        grid = pd.DataFrame(index=lines)
+        for b in brands:
+            grid[(b, "price")] = price_p[b] if b in price_p.columns else np.nan
+            grid[(b, "index")] = idx_p[b] if b in idx_p.columns else np.nan
+        out[segment] = grid
+    return out, brands
+
+
+def _draw_positioning_across_lines_page(
+    fig, silver: pd.DataFrame, latest: pd.Timestamp, logos_dir: Path = LOGOS_DIR
+) -> None:
+    from matplotlib.gridspec import GridSpec
+
+    def _fmt_price(v: float) -> str:
+        if pd.isna(v):
+            return "-"
+        return f"{float(v):.1f}".replace(".", ",")
+
+    def _fmt_idx(v: float) -> str:
+        if pd.isna(v):
+            return "-"
+        return f"{int(round(float(v)))}"
+
+    tables, brands = _build_positioning_across_lines_latest(silver=silver, latest=latest, brands=list(RECAP_BRANDS))
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.96, bottom=0.05)
+    fig.text(0.5, 0.95, "POSITIONING ACROSS LINES", ha="center", va="center", fontsize=27, color="#D70000", fontweight="bold")
+    fig.text(0.5, 0.905, "First 3 Offerors price on Market Segment's key fitment", ha="center", va="center", fontsize=18, color="#7A8793")
+
+    gs = GridSpec(2, 1, figure=fig, hspace=0.17, top=0.84, bottom=0.06)
+
+    def _build_table_ax(ax, segment: str) -> None:
+        ax.axis("off")
+        seg_tbl = tables.get(segment)
+        if seg_tbl is None:
+            ax.text(0.5, 0.5, f"No data for {segment}", ha="center", va="center", fontsize=12)
+            return
+
+        col_labels = ["Lines"]
+        for b in brands:
+            col_labels.extend([b, "INDEX (1st PI=100)"])
+
+        row_labels = [("1ST", "1st Line"), ("2ND", "2nd Line"), ("3RD", "3rd Line")]
+        cell_text: list[list[str]] = []
+        for line_key, line_label in row_labels:
+            row = [line_label]
+            for b in brands:
+                price_col = (b, "price")
+                idx_col = (b, "index")
+                price = seg_tbl.at[line_key, price_col] if (line_key in seg_tbl.index and price_col in seg_tbl.columns) else np.nan
+                idxv = seg_tbl.at[line_key, idx_col] if (line_key in seg_tbl.index and idx_col in seg_tbl.columns) else np.nan
+                row.extend([_fmt_price(price), _fmt_idx(idxv)])
+            cell_text.append(row)
+
+        ncols = len(col_labels)
+        first_w = 0.10
+        other_w = (1.0 - first_w) / (ncols - 1)
+        col_widths = [first_w] + [other_w] * (ncols - 1)
+
+        table = ax.table(
+            cellText=cell_text,
+            colLabels=col_labels,
+            loc="center",
+            cellLoc="center",
+            colLoc="center",
+            colWidths=col_widths,
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1.0, 2.0)
+
+        for (r, c), cell in table.get_celld().items():
+            cell.set_edgecolor("#222222")
+            cell.set_linewidth(0.8)
+            if r == 0:
+                cell.set_facecolor("#EDEDED")
+                cell.get_text().set_fontweight("bold")
+                cell.get_text().set_fontsize(8.6)
+            elif c > 0 and c % 2 == 0:
+                cell.set_facecolor("#E8EFDF")
+            else:
+                cell.set_facecolor("#FFFFFF")
+
+        ax.set_title(segment, fontsize=13, fontweight="bold", loc="left", pad=8)
+
+    _build_table_ax(fig.add_subplot(gs[0, 0]), "SUPERSPORT")
+    _build_table_ax(fig.add_subplot(gs[1, 0]), "SPORT TOURING RADIAL")
 
 
 def _kpi_card(ax, title: str, value: str, delta: str | None, tone: str = "neutral") -> None:
@@ -442,7 +591,13 @@ def build_pdf_report(
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        # Page 2: Price positioning and segment heatmaps
+        # Page 2: Positioning across lines (Supersport, Sport Touring Radial).
+        fig = plt.figure(figsize=(16, 9))
+        _draw_positioning_across_lines_page(fig, silver=silver, latest=latest, logos_dir=logos_dir)
+        pdf.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+        # Page 3: Price positioning and segment heatmaps
         fig = plt.figure(figsize=(16, 9))
         gs = GridSpec(2, 3, figure=fig, height_ratios=[1.2, 1.3], hspace=0.4, wspace=0.28)
         _decorate_page(fig, "Price Positioning", "Gap = Pirelli median price - median of top competitor set, by week and rim group")
@@ -513,7 +668,7 @@ def build_pdf_report(
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        # Page 3: Fitment and segment dynamics
+        # Page 4: Fitment and segment dynamics
         fig = plt.figure(figsize=(16, 9))
         gs = GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.25)
         _decorate_page(
@@ -577,7 +732,7 @@ def build_pdf_report(
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        # Page 4: Seller checkpoint with bubble chart
+        # Page 5: Seller checkpoint with bubble chart
         fig = plt.figure(figsize=(16, 9))
         gs = GridSpec(2, 2, figure=fig, height_ratios=[1.25, 1.0], hspace=0.35, wspace=0.25)
         _decorate_page(
@@ -648,7 +803,7 @@ def build_pdf_report(
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        # Page 5: Key fitment product checkpoint
+        # Page 6: Key fitment product checkpoint
         fig = plt.figure(figsize=(16, 9))
         gs = GridSpec(2, 1, figure=fig, height_ratios=[0.35, 1.65], hspace=0.18)
         _decorate_page(
