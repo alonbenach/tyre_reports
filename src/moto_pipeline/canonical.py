@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from rapidfuzz import fuzz
 
@@ -16,6 +17,20 @@ def _norm_text(value: object) -> str:
     text = re.sub(r"[^A-Z0-9 ]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def _contains_phrase(text: str, phrase: str) -> int:
+    if not text or not phrase:
+        return 0
+    return 1 if re.search(rf"\b{re.escape(phrase)}\b", text) else 0
+
+
+def _all_tokens_present(text: str, pattern: str) -> int:
+    text_tokens = set((text or "").split())
+    pattern_tokens = [t for t in (pattern or "").split() if t]
+    if not pattern_tokens:
+        return 0
+    return 1 if all(tok in text_tokens for tok in pattern_tokens) else 0
 
 
 def extract_size_root(value: object) -> str:
@@ -172,33 +187,87 @@ def match_to_canonical(oponeo_df: pd.DataFrame, canonical_ref: pd.DataFrame) -> 
 
     has_candidate = merged["pattern_set"].notna()
     merged["pattern_match_score"] = 0.0
+    merged["pattern_phrase_hit"] = 0
+    merged["pattern_all_tokens_hit"] = 0
+    merged["pattern_token_count"] = merged["pattern_set_norm"].astype("string").fillna("").str.split().str.len()
+    merged["pattern_char_len"] = merged["pattern_set_norm"].astype("string").fillna("").str.len()
     merged.loc[has_candidate, "pattern_match_score"] = merged.loc[has_candidate].apply(
         lambda r: float(
             max(
                 fuzz.token_set_ratio(r["name_norm_ref"], r["pattern_set_norm"]),
+                fuzz.token_sort_ratio(r["name_norm_ref"], r["pattern_set_norm"]),
                 fuzz.token_set_ratio(str(r.get("pattern_family_norm", "")), r["pattern_set_norm"]),
                 fuzz.partial_ratio(r["name_norm_ref"], r["pattern_set_norm"]),
             )
         ),
         axis=1,
     )
+    merged.loc[has_candidate, "pattern_phrase_hit"] = merged.loc[has_candidate].apply(
+        lambda r: _contains_phrase(str(r["name_norm_ref"]), str(r["pattern_set_norm"])),
+        axis=1,
+    )
+    merged.loc[has_candidate, "pattern_all_tokens_hit"] = merged.loc[has_candidate].apply(
+        lambda r: max(
+            _all_tokens_present(str(r["name_norm_ref"]), str(r["pattern_set_norm"])),
+            _all_tokens_present(str(r.get("pattern_family_norm", "")), str(r["pattern_set_norm"])),
+        ),
+        axis=1,
+    )
 
     merged = merged.sort_values(
-        ["snapshot_date", "brand", "seller_norm", "product_code", "pattern_match_score", "match_rank"],
-        ascending=[True, True, True, True, False, True],
+        [
+            "snapshot_date",
+            "brand",
+            "seller_norm",
+            "product_code",
+            "pattern_all_tokens_hit",
+            "pattern_match_score",
+            "pattern_phrase_hit",
+            "pattern_token_count",
+            "pattern_char_len",
+            "match_rank",
+        ],
+        ascending=[True, True, True, True, False, False, False, False, False, True],
     )
     best = merged.drop_duplicates(
         subset=["snapshot_date", "brand", "seller_norm", "product_code", "price_pln", "size_root"], keep="first"
     ).copy()
 
+    strict_candidate = best["pattern_set"].notna() & best["pattern_all_tokens_hit"].eq(1)
     best["match_method"] = "unmatched"
-    best.loc[best["pattern_set"].notna() & (best["pattern_match_score"] >= 95), "match_method"] = "brand_size_exact_pattern"
+    best.loc[strict_candidate & (best["pattern_match_score"] >= 95), "match_method"] = "brand_size_exact_pattern"
     best.loc[
-        best["pattern_set"].notna() & best["match_method"].eq("unmatched") & (best["pattern_match_score"] >= 70),
+        strict_candidate & best["match_method"].eq("unmatched") & (best["pattern_match_score"] >= 70),
         "match_method",
     ] = "brand_size_fuzzy_pattern"
-    best.loc[best["pattern_set"].notna() & best["match_method"].eq("unmatched"), "match_method"] = "brand_size_low_score"
+    best.loc[strict_candidate & best["match_method"].eq("unmatched"), "match_method"] = "brand_size_low_score"
 
-    best["is_canonical_match"] = best["pattern_set"].notna()
-    best["is_high_confidence_match"] = best["match_method"].isin(["brand_size_exact_pattern", "brand_size_fuzzy_pattern"])
+    high_conf_mask = best["match_method"].isin(["brand_size_exact_pattern", "brand_size_fuzzy_pattern"])
+    non_high_conf_mask = ~high_conf_mask
+
+    # Enforce canonical agreement on both pattern and fitment root.
+    # Low-score rows keep diagnostics, but lose canonical attributes so they cannot drive segment analytics.
+    canonical_cols = [
+        "pattern_set",
+        "pattern_set_norm",
+        "segment_reference_group",
+        "key_fitments",
+        "size_text",
+        "list_price",
+        "ipcode",
+        "extra_discount",
+        "is_extra_3pct_set",
+        "oponeo_all_in_plus_extra",
+    ]
+    for col in canonical_cols:
+        if col in best.columns:
+            if pd.api.types.is_bool_dtype(best[col].dtype):
+                best.loc[non_high_conf_mask, col] = False
+            elif pd.api.types.is_numeric_dtype(best[col].dtype):
+                best.loc[non_high_conf_mask, col] = np.nan
+            else:
+                best.loc[non_high_conf_mask, col] = pd.NA
+
+    best["is_canonical_match"] = high_conf_mask
+    best["is_high_confidence_match"] = high_conf_mask
     return best.drop(columns=["name_norm_ref", "pattern_family_norm"])
