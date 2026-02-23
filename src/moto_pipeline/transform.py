@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .canonical import build_canonical_reference, match_to_canonical
+from .canonical import assert_high_confidence_token_integrity, build_canonical_reference, match_to_canonical
 from .io import read_weekly_csv, write_df
 from .settings import INPUT_COLUMNS, MOTORCYCLE_TYPE, RAW_DIR, SILVER_DIR
 
@@ -88,6 +88,7 @@ def build_motorcycle_silver(
 
     canonical_ref, campaign_ctx = build_canonical_reference()
     moto = match_to_canonical(moto, canonical_ref)
+    assert_high_confidence_token_integrity(moto)
     moto["oponeo_all_in_discount"] = campaign_ctx.oponeo_all_in_discount
     moto["effective_all_in_discount"] = moto["oponeo_all_in_plus_extra"].fillna(campaign_ctx.oponeo_all_in_discount)
     moto["expected_net_price_from_list"] = moto["list_price"] * (1 - moto["effective_all_in_discount"])
