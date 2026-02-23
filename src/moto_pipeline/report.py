@@ -126,14 +126,57 @@ def _decorate_page(fig, title: str, subtitle: str) -> None:
     fig.subplots_adjust(top=0.84, bottom=0.07, left=0.05, right=0.98)
     fig.suptitle(title, fontsize=17, fontweight="bold", x=0.03, y=0.975, ha="left")
     fig.text(0.03, 0.935, subtitle, fontsize=9.5, color="#374151", ha="left")
-    fig.text(
-        0.995,
-        0.01,
-        "Internal analytical draft | Oponeo snapshots | Pirelli + top competitors",
-        fontsize=7,
-        color="#6B7280",
-        ha="right",
+
+
+def _add_page_footer(fig, page_no: int, lines: list[str]) -> None:
+    from matplotlib.patches import Rectangle
+
+    # Draw on an overlay axis so content coordinates do not interfere with page plots.
+    ax = fig.add_axes([0, 0, 1, 1], zorder=100)
+    ax.axis("off")
+
+    x, y, w, h = 0.66, 0.012, 0.32, 0.08
+    box = Rectangle(
+        (x, y),
+        w,
+        h,
+        transform=ax.transAxes,
+        facecolor="#ECEFF3",
+        edgecolor="#6B7280",
+        linewidth=1.0,
+        linestyle=(0, (3, 2)),
     )
+    ax.add_patch(box)
+
+    body = "\n".join([str(t) for t in lines if str(t).strip()][:4])
+    ax.text(
+        x + w - 0.01,
+        y + h / 2,
+        body,
+        transform=ax.transAxes,
+        ha="right",
+        va="center",
+        fontsize=8.6,
+        color="#111827",
+        style="italic",
+    )
+    ax.text(0.02, 0.008, f"Page {page_no}", transform=ax.transAxes, ha="left", va="bottom", fontsize=8, color="#4B5563")
+
+
+def _segment_footer_lines(segment_reference_group: str, key_fitments: str) -> list[str]:
+    seg = str(segment_reference_group or "").strip()
+    if " - " in seg:
+        seg = seg.split(" - ", 1)[1].strip()
+    seg = seg.replace(" 1st", " 1st line").replace(" 2nd", " 2nd line").replace(" 3rd", " 3rd line")
+    key = str(key_fitments or "").strip()
+    if not key:
+        key = "-"
+    return [
+        "Weekly data",
+        f"Segment Reference Group: {seg}",
+        "Weighted on Oponeo.pl stock",
+        f"Key fitments: {key}",
+    ]
 
 
 def _add_subplot_note(ax, note: str) -> None:
@@ -564,7 +607,7 @@ def _draw_segment_pattern_checkpoint_page(
         f"Segment Checkpoint - {seg_label.title()}",
         "Brand -> key pattern set (latest) with PY/LW/CW prices, index vs Pirelli, and weekly trend",
     )
-    gs = GridSpec(2, 1, figure=fig, height_ratios=[1.05, 1.20], hspace=0.30)
+    gs = GridSpec(2, 1, figure=fig, height_ratios=[1.02, 1.08], hspace=0.24, top=0.82, bottom=0.14)
 
     ax_tbl = fig.add_subplot(gs[0, 0])
     ax_tbl.axis("off")
@@ -992,17 +1035,40 @@ def build_pdf_report(
     )
 
     with PdfPages(output) as pdf:
+        page_no = 1
+        mapping = load_canonical_mapping()
+        keyfit_by_group: dict[str, str] = {}
+        if not mapping.empty and "segment_reference_group" in mapping.columns and "key_fitments" in mapping.columns:
+            tmp = (
+                mapping[["segment_reference_group", "key_fitments"]]
+                .astype("string")
+                .fillna("")
+                .assign(
+                    segment_reference_group=lambda d: d["segment_reference_group"].str.strip(),
+                    key_fitments=lambda d: d["key_fitments"].str.strip(),
+                )
+            )
+            tmp = tmp[(tmp["segment_reference_group"] != "") & (tmp["key_fitments"] != "")]
+            for g, grp in tmp.groupby("segment_reference_group", dropna=False):
+                keyfit_by_group[str(g)] = str(grp["key_fitments"].mode().iloc[0]) if not grp.empty else "-"
+
+        def _save_page(fig, lines: list[str] | None = None, add_footer: bool = True) -> None:
+            nonlocal page_no
+            if add_footer and lines:
+                _add_page_footer(fig, page_no=page_no, lines=lines)
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)
+            page_no += 1
+
         # Page 1: Italy-style recap matrix.
         fig = plt.figure(figsize=(16, 9))
         _draw_recap_matrix_page(fig, recap_latest=recap_latest, logos_dir=logos_dir)
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        _save_page(fig, add_footer=False)
 
         # Page 2: Positioning across lines (Supersport, Sport Touring Radial).
         fig = plt.figure(figsize=(16, 9))
         _draw_positioning_across_lines_page(fig, silver=silver, latest=latest, logos_dir=logos_dir)
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        _save_page(fig, add_footer=False)
 
         focused_groups = _focused_segment_groups(max_groups=10)
         primary_group = "706 - SUPERSPORT 1st"
@@ -1018,8 +1084,7 @@ def build_pdf_report(
             prev=prev,
             segment_reference_group=primary_group,
         )
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        _save_page(fig, lines=_segment_footer_lines(primary_group, keyfit_by_group.get(primary_group, "-")), add_footer=True)
 
         if primary_group not in focused_groups:
             primary_group = focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
@@ -1035,8 +1100,7 @@ def build_pdf_report(
                 prev=prev,
                 segment_reference_group=group,
             )
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save_page(fig, lines=_segment_footer_lines(group, keyfit_by_group.get(group, "-")), add_footer=True)
 
     logger.info("PDF report written: %s", output)
     return output
