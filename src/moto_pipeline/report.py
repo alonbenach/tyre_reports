@@ -401,6 +401,349 @@ def _draw_positioning_across_lines_page(
     _build_table_ax(fig.add_subplot(gs[1, 0]), "SPORT TOURING RADIAL")
 
 
+def _build_segment_pattern_checkpoint(
+    silver: pd.DataFrame,
+    segment_reference_group: str,
+    latest: pd.Timestamp,
+    prev: pd.Timestamp | None,
+    brands: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if brands is None:
+        brands = list(RECAP_BRANDS)
+
+    work = silver.copy()
+    work["snapshot_date"] = pd.to_datetime(work["snapshot_date"], errors="coerce")
+    work["price_pln"] = pd.to_numeric(work["price_pln"], errors="coerce")
+    work["stock_qty"] = pd.to_numeric(work.get("stock_qty"), errors="coerce").fillna(0)
+    work["pattern_set"] = work.get("pattern_set", pd.Series(index=work.index, dtype="string")).astype("string").str.strip()
+    work = work[work["brand"].isin(brands)]
+    work = work[work["segment_reference_group"].astype("string").str.strip() == segment_reference_group]
+    work = work[work["price_pln"].notna()]
+    if "is_high_confidence_match" in work.columns:
+        work = work[work["is_high_confidence_match"].fillna(False)]
+    work = work[work["pattern_set"].notna() & (work["pattern_set"] != "")]
+    if work.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    latest_slice = work[work["snapshot_date"] == latest].copy()
+    if latest_slice.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    top_patterns = (
+        latest_slice.groupby(["brand", "pattern_set"], dropna=False)
+        .agg(stock_qty=("stock_qty", "sum"), rows=("product_code", "count"), price_cw=("price_pln", "median"))
+        .reset_index()
+        .sort_values(["brand", "stock_qty", "rows", "price_cw", "pattern_set"], ascending=[True, False, False, False, True])
+        .groupby("brand", as_index=False)
+        .head(1)
+    )
+    brand_to_pattern = dict(zip(top_patterns["brand"], top_patterns["pattern_set"]))
+
+    series_rows: list[dict[str, object]] = []
+    rows: list[dict[str, object]] = []
+    latest_iso = latest.isocalendar()
+    py_year = int(latest_iso.year) - 1
+    py_week = int(latest_iso.week)
+
+    for brand in brands:
+        pattern = brand_to_pattern.get(brand)
+        record = {
+            "brand": brand,
+            "pattern_set": "-" if pattern is None else str(pattern),
+            "price_py": np.nan,
+            "price_lw": np.nan,
+            "price_cw": np.nan,
+        }
+        if pattern is None:
+            rows.append(record)
+            continue
+
+        bp = work[(work["brand"] == brand) & (work["pattern_set"] == pattern)].copy()
+        ts = bp.groupby("snapshot_date", dropna=False).agg(price=("price_pln", "median")).reset_index().sort_values("snapshot_date")
+        if ts.empty:
+            rows.append(record)
+            continue
+
+        for r in ts.itertuples(index=False):
+            series_rows.append(
+                {
+                    "brand": brand,
+                    "pattern_set": pattern,
+                    "snapshot_date": r.snapshot_date,
+                    "price": r.price,
+                }
+            )
+
+        cw_row = ts[ts["snapshot_date"] == latest]
+        if not cw_row.empty:
+            record["price_cw"] = float(cw_row["price"].iloc[0])
+        if prev is not None:
+            lw_row = ts[ts["snapshot_date"] == prev]
+            if not lw_row.empty:
+                record["price_lw"] = float(lw_row["price"].iloc[0])
+        iso = ts["snapshot_date"].dt.isocalendar()
+        py_row = ts[(iso["year"] == py_year) & (iso["week"] == py_week)]
+        if not py_row.empty:
+            record["price_py"] = float(py_row["price"].iloc[-1])
+
+        rows.append(record)
+
+    table = pd.DataFrame(rows)
+    series_df = pd.DataFrame(series_rows)
+
+    pirelli_row = table[table["brand"] == "Pirelli"]
+    pirelli_cw = float(pirelli_row["price_cw"].iloc[0]) if not pirelli_row.empty and pd.notna(pirelli_row["price_cw"].iloc[0]) else np.nan
+    pirelli_lw = float(pirelli_row["price_lw"].iloc[0]) if not pirelli_row.empty and pd.notna(pirelli_row["price_lw"].iloc[0]) else np.nan
+
+    table["index_cw"] = np.where(
+        pd.notna(table["price_cw"]) & pd.notna(pirelli_cw) & (pirelli_cw != 0),
+        100 * (table["price_cw"] / pirelli_cw),
+        np.nan,
+    )
+    table["index_lw"] = np.where(
+        pd.notna(table["price_lw"]) & pd.notna(pirelli_lw) & (pirelli_lw != 0),
+        100 * (table["price_lw"] / pirelli_lw),
+        np.nan,
+    )
+    table["delta_index"] = table["index_cw"] - table["index_lw"]
+    table["var_vs_py_pct"] = np.where(
+        pd.notna(table["price_cw"]) & pd.notna(table["price_py"]) & (table["price_py"] != 0),
+        100 * (table["price_cw"] / table["price_py"] - 1),
+        np.nan,
+    )
+    table["var_vs_lw_pct"] = np.where(
+        pd.notna(table["price_cw"]) & pd.notna(table["price_lw"]) & (table["price_lw"] != 0),
+        100 * (table["price_cw"] / table["price_lw"] - 1),
+        np.nan,
+    )
+    return table, series_df
+
+
+def _draw_segment_pattern_checkpoint_page(
+    fig,
+    silver: pd.DataFrame,
+    latest: pd.Timestamp,
+    prev: pd.Timestamp | None,
+    segment_reference_group: str,
+) -> None:
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
+    from matplotlib.patches import FancyBboxPatch
+    from matplotlib.ticker import MaxNLocator
+
+    def _p(v: float) -> str:
+        return "-" if pd.isna(v) else f"{float(v):.1f}".replace(".", ",")
+
+    def _idx(v: float) -> str:
+        return "-" if pd.isna(v) else f"{int(round(float(v)))}"
+
+    def _delta(v: float) -> str:
+        return "-" if pd.isna(v) else f"{int(round(float(v))):+d}"
+
+    def _pct_arrow(v: float) -> str:
+        if pd.isna(v):
+            return "-"
+        if float(v) > 0.05:
+            return f"? {float(v):+.1f}%"
+        if float(v) < -0.05:
+            return f"? {float(v):+.1f}%"
+        return f"? {float(v):+.1f}%"
+
+    table, series_df = _build_segment_pattern_checkpoint(
+        silver=silver,
+        segment_reference_group=segment_reference_group,
+        latest=latest,
+        prev=prev,
+        brands=list(RECAP_BRANDS),
+    )
+
+    _decorate_page(
+        fig,
+        "Segment Checkpoint - Supersport 1st",
+        "Brand -> key pattern set (latest) with PY/LW/CW prices, index vs Pirelli, and weekly trend",
+    )
+    gs = GridSpec(2, 1, figure=fig, height_ratios=[1.05, 1.20], hspace=0.30)
+
+    ax_tbl = fig.add_subplot(gs[0, 0])
+    ax_tbl.axis("off")
+
+    if table.empty:
+        ax_tbl.text(0.5, 0.5, "No high-confidence data for SUPERSPORT 1st.", ha="center", va="center", fontsize=11)
+    else:
+        # Rounded container similar to the Italian look.
+        ax_tbl.add_patch(
+            FancyBboxPatch(
+                (0.12, 0.10),
+                0.76,
+                0.80,
+                boxstyle="round,pad=0.012,rounding_size=0.02",
+                transform=ax_tbl.transAxes,
+                facecolor="#F8FAFC",
+                edgecolor="#C9D2DC",
+                linewidth=1.0,
+                zorder=0,
+            )
+        )
+
+        disp = table.copy()
+        disp["Brand"] = disp["brand"]
+        disp["Pattern Set"] = disp["pattern_set"]
+        disp["Price PY"] = disp["price_py"].map(_p)
+        disp["Price LW"] = disp["price_lw"].map(_p)
+        disp["Price CW"] = disp["price_cw"].map(_p)
+        disp["Index CW\n(Pirelli=100)"] = disp["index_cw"].map(_idx)
+        disp["Delta\nIndex"] = disp["delta_index"].map(_delta)
+        disp["% vs PY"] = disp["var_vs_py_pct"].map(_pct_arrow)
+        disp["% vs LW"] = disp["var_vs_lw_pct"].map(_pct_arrow)
+        disp = disp[
+            [
+                "Brand",
+                "Pattern Set",
+                "Price PY",
+                "Price LW",
+                "Price CW",
+                "Index CW\n(Pirelli=100)",
+                "Delta\nIndex",
+                "% vs PY",
+                "% vs LW",
+            ]
+        ]
+
+        col_widths = [0.11, 0.20, 0.09, 0.09, 0.09, 0.12, 0.09, 0.105, 0.105]
+        t = ax_tbl.table(
+            cellText=disp.values,
+            colLabels=disp.columns,
+            cellLoc="center",
+            colLoc="center",
+            colWidths=col_widths,
+            bbox=[0.14, 0.14, 0.72, 0.72],
+        )
+        t.auto_set_font_size(False)
+        t.set_fontsize(8.2)
+        t.scale(1.0, 1.72)
+
+        for (r, c), cell in t.get_celld().items():
+            cell.set_edgecolor("#1F2937")
+            cell.set_linewidth(0.7)
+            if r == 0:
+                cell.set_facecolor("#E5E7EB")
+                cell.get_text().set_fontweight("bold")
+                cell.get_text().set_fontsize(7.6)
+                cell.set_height(cell.get_height() * 1.18)
+            elif c in [5, 6]:
+                cell.set_facecolor("#EEF5E9")
+            else:
+                cell.set_facecolor("#FFFFFF")
+
+        # Color-code growth/fall cells.
+        for ridx in range(1, len(disp) + 1):
+            for cidx, raw_col in [(7, "var_vs_py_pct"), (8, "var_vs_lw_pct")]:
+                v = table.iloc[ridx - 1][raw_col]
+                tc = t[(ridx, cidx)].get_text()
+                if pd.isna(v):
+                    tc.set_color("#6B7280")
+                elif float(v) > 0.05:
+                    tc.set_color("#166534")
+                elif float(v) < -0.05:
+                    tc.set_color("#991B1B")
+                else:
+                    tc.set_color("#374151")
+
+        # Replace brand text with logos where available.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        for ridx in range(1, len(disp) + 1):
+            brand = str(table.iloc[ridx - 1]["brand"])
+            cell = t[(ridx, 0)]
+            path = _logo_path(brand)
+            if not path:
+                cell.get_text().set_fontweight("bold")
+                continue
+            try:
+                cell.get_text().set_text("")
+                img = plt.imread(path)
+                bbox = cell.get_window_extent(renderer=renderer)
+                (x0, y0), (x1, y1) = ax_tbl.transAxes.inverted().transform([[bbox.x0, bbox.y0], [bbox.x1, bbox.y1]])
+                w = max((x1 - x0) * 0.86, 0.001)
+                h = max((y1 - y0) * 0.70, 0.001)
+                lx = x0 + (x1 - x0 - w) / 2
+                ly = y0 + (y1 - y0 - h) / 2
+                lax = ax_tbl.inset_axes([lx, ly, w, h], transform=ax_tbl.transAxes, zorder=5)
+                lax.imshow(img)
+                lax.set_aspect("auto")
+                lax.axis("off")
+            except Exception:
+                cell.get_text().set_text(brand)
+                cell.get_text().set_fontweight("bold")
+
+    ax_ts = fig.add_subplot(gs[1, 0])
+    if series_df.empty:
+        ax_ts.axis("off")
+        ax_ts.text(0.5, 0.5, "No weekly series available.", ha="center", va="center")
+        return
+
+    series_df = series_df.copy()
+    series_df["snapshot_date"] = pd.to_datetime(series_df["snapshot_date"], errors="coerce")
+    valid_dates = sorted(series_df["snapshot_date"].dropna().unique().tolist())
+    if not valid_dates:
+        ax_ts.axis("off")
+        ax_ts.text(0.5, 0.5, "No weekly series available.", ha="center", va="center")
+        return
+
+    # Dynamic rolling window: keep up to last 60 observations.
+    keep_dates = set(valid_dates[-60:])
+    plot_df = series_df[series_df["snapshot_date"].isin(keep_dates)].copy()
+
+    plot_colors = {
+        "Pirelli": "#0072B2",
+        "Metzeler": "#009E73",
+        "Michelin": "#CC79A7",
+        "Continental": "#56B4E9",
+        "Bridgestone": "#D55E00",
+        "Dunlop": "#000000",
+    }
+
+    for row in table.itertuples(index=False):
+        if str(row.pattern_set) == "-" or pd.isna(row.pattern_set):
+            continue
+        s = plot_df[(plot_df["brand"] == row.brand) & (plot_df["pattern_set"] == row.pattern_set)].sort_values("snapshot_date")
+        if s.empty:
+            continue
+        ax_ts.plot(
+            s["snapshot_date"],
+            s["price"],
+            marker="o",
+            linewidth=2.0,
+            label=str(row.brand),
+            color=plot_colors.get(str(row.brand), _brand_color(str(row.brand))),
+            alpha=0.95,
+        )
+
+    vals = plot_df["price"].dropna().to_numpy()
+    if len(vals) > 0:
+        ymin, ymax = float(np.min(vals)), float(np.max(vals))
+        span = max(ymax - ymin, 1.0)
+        pad = span * 0.14
+        ax_ts.set_ylim(ymin - pad, ymax + pad)
+
+    x_vals = [pd.Timestamp(x) for x in sorted(keep_dates)]
+    if x_vals:
+        step = max(1, len(x_vals) // 12)
+        tick_vals = x_vals[::step]
+        if x_vals[-1] not in tick_vals:
+            tick_vals.append(x_vals[-1])
+        ax_ts.set_xticks(tick_vals)
+        ax_ts.set_xticklabels([f"W{int(x.isocalendar().week):02d}" for x in tick_vals], fontsize=9)
+
+    ax_ts.set_title("Weekly Price Evolution by Brand (selected pattern set)", fontsize=11, fontweight="bold")
+    _add_subplot_note(ax_ts, "X-axis shows ISO week numbers. Up to last 60 weekly observations are displayed.")
+    ax_ts.set_ylabel("Median Price (PLN)")
+    ax_ts.yaxis.set_major_locator(MaxNLocator(nbins=7))
+    ax_ts.grid(axis="y", alpha=0.30)
+    ax_ts.legend(frameon=False, ncol=3, fontsize=8, loc="best")
+
+
+
 def _kpi_card(ax, title: str, value: str, delta: str | None, tone: str = "neutral") -> None:
     tones = {
         "good": "#166534",
@@ -598,73 +941,14 @@ def build_pdf_report(
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        # Page 3: Price positioning and segment heatmaps
+        # Page 3: Segment-level checkpoint (Supersport 1st)
         fig = plt.figure(figsize=(16, 9))
-        gs = GridSpec(2, 3, figure=fig, height_ratios=[1.2, 1.3], hspace=0.4, wspace=0.28)
-        _decorate_page(fig, "Price Positioning", "Gap = Pirelli median price - median of top competitor set, by week and rim group")
-
-        overall = positioning[positioning["granularity"] == "overall"].sort_values("snapshot_date")
-        ax = fig.add_subplot(gs[0, :2])
-        ax.plot(overall["snapshot_date"], overall["price_gap_vs_comp"], color="#111827", linewidth=2.5, marker="o")
-        ax.axhline(0, color="#6B7280", linewidth=1)
-        ax.fill_between(
-            overall["snapshot_date"],
-            overall["price_gap_vs_comp"],
-            0,
-            where=overall["price_gap_vs_comp"] >= 0,
-            color="#22C55E",
-            alpha=0.15,
-        )
-        ax.fill_between(
-            overall["snapshot_date"],
-            overall["price_gap_vs_comp"],
-            0,
-            where=overall["price_gap_vs_comp"] < 0,
-            color="#EF4444",
-            alpha=0.15,
-        )
-        ax.set_title("Pirelli Price Gap vs Top Competitors (Median)")
-        _add_subplot_note(ax, "Positive = Pirelli priced above competitor median. Negative = below competitor median.")
-        _format_date_axis(ax, max_ticks=5)
-        ax.set_ylabel("Gap (PLN)")
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.grid(alpha=0.25)
-        for row in overall.itertuples(index=False):
-            ax.text(row.snapshot_date, row.price_gap_vs_comp, f"{row.price_gap_vs_comp:+.1f}", fontsize=8, ha="center", va="bottom")
-
-        ax_tbl = fig.add_subplot(gs[0, 2])
-        ax_tbl.axis("off")
-        segment_granularity = "fitment_size_root" if "fitment_size_root" in positioning["granularity"].astype("string").unique() else "rim_group"
-        key_col = "analysis_fitment_key" if "analysis_fitment_key" in positioning.columns else "rim_group"
-        latest_pos = positioning[positioning["snapshot_date"] == latest].copy()
-        latest_pos = latest_pos[latest_pos["granularity"] == segment_granularity].sort_values("price_gap_vs_comp", ascending=False)
-        table_cols = [key_col, "pirelli_median_price", "competitor_median_price", "price_gap_vs_comp", "pirelli_price_index"]
-        table_df = latest_pos[table_cols].copy()
-        table_df.columns = ["Fitment/Size", "Pirelli", "Competitors", "Gap", "Index"]
-        table_df = table_df.head(10)
-        for col in ["Pirelli", "Competitors", "Gap", "Index"]:
-            table_df[col] = table_df[col].map(lambda x: f"{x:.1f}" if pd.notna(x) else "n/a")
-        tbl = ax_tbl.table(cellText=table_df.values, colLabels=table_df.columns, loc="center", cellLoc="center")
-        tbl.auto_set_font_size(False)
-        tbl.set_fontsize(8)
-        tbl.scale(1.0, 1.2)
-        ax_tbl.set_title("Latest Week by Rim Group", pad=8)
-
-        ax_h1 = fig.add_subplot(gs[1, 0:2])
-        _pivot_heatmap(
-            ax_h1,
-            positioning[positioning["granularity"] == segment_granularity],
-            value_col="price_gap_vs_comp",
-            title="Heatmap: Pirelli Gap vs Competitors (PLN) by Fitment/Size",
-            fmt="{:+.1f}",
-        )
-        ax_h2 = fig.add_subplot(gs[1, 2])
-        _pivot_heatmap(
-            ax_h2,
-            positioning[positioning["granularity"] == segment_granularity],
-            value_col="pirelli_price_index",
-            title="Heatmap: Pirelli Price Index by Fitment/Size",
-            fmt="{:.1f}",
+        _draw_segment_pattern_checkpoint_page(
+            fig,
+            silver=silver,
+            latest=latest,
+            prev=prev,
+            segment_reference_group="706 - SUPERSPORT 1st",
         )
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
