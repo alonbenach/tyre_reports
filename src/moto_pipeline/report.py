@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .canonical import load_canonical_mapping
 from .settings import FOCUS_BRANDS, GOLD_DIR, LOGOS_DIR, RECAP_BRANDS, REPORT_DIR, SILVER_DIR
 
 
@@ -557,9 +558,10 @@ def _draw_segment_pattern_checkpoint_page(
         brands=list(RECAP_BRANDS),
     )
 
+    seg_label = str(segment_reference_group).split(" - ", 1)[-1] if " - " in str(segment_reference_group) else str(segment_reference_group)
     _decorate_page(
         fig,
-        "Segment Checkpoint - Supersport 1st",
+        f"Segment Checkpoint - {seg_label.title()}",
         "Brand -> key pattern set (latest) with PY/LW/CW prices, index vs Pirelli, and weekly trend",
     )
     gs = GridSpec(2, 1, figure=fig, height_ratios=[1.05, 1.20], hspace=0.30)
@@ -568,7 +570,7 @@ def _draw_segment_pattern_checkpoint_page(
     ax_tbl.axis("off")
 
     if table.empty:
-        ax_tbl.text(0.5, 0.5, "No high-confidence data for SUPERSPORT 1st.", ha="center", va="center", fontsize=11)
+        ax_tbl.text(0.5, 0.5, f"No high-confidence data for {seg_label}.", ha="center", va="center", fontsize=11)
     else:
         # Rounded container similar to the Italian look.
         ax_tbl.add_patch(
@@ -798,6 +800,67 @@ def _pivot_heatmap(ax, df: pd.DataFrame, value_col: str, title: str, fmt: str = 
     ax.figure.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
 
 
+def _focused_segment_groups(max_groups: int = 10) -> list[str]:
+    """Return focused groups in fixed Italian-style narrative order."""
+    preferred_order = [
+        "706 - SUPERSPORT 1st",
+        "706 - SUPERSPORT 2nd",
+        "706 - SUPERSPORT 3rd",
+        "751 - SPORT TOURING RADIAL 1st",
+        "751 - SPORT TOURING RADIAL 2nd",
+        "751 - SPORT TOURING RADIAL 3rd",
+        "707 - RACING STREET 1st",
+        "746 - ENDURO STREET 1st",
+        "747 - ENDURO ON/OFF 1st",
+        "762 - CUSTOM / TOURING X-PLY 1st",
+    ]
+
+    try:
+        mapping = load_canonical_mapping()
+        groups = (
+            mapping["segment_reference_group"]
+            .astype("string")
+            .fillna("")
+            .str.strip()
+            .tolist()
+        )
+    except Exception:
+        groups = []
+
+    seen: set[str] = set()
+    available: list[str] = []
+    for g in groups:
+        if g and g not in seen:
+            seen.add(g)
+            available.append(g)
+
+    out: list[str] = [g for g in preferred_order if g in available]
+
+    # Append any non-standard groups deterministically by numeric code and line rank.
+    leftovers = [g for g in available if g not in out]
+
+    def _sort_key(g: str) -> tuple[int, int, str]:
+        m_code = re.match(r"\s*(\d+)", g)
+        code = int(m_code.group(1)) if m_code else 9999
+        gl = g.upper()
+        if " 1ST" in gl:
+            line = 1
+        elif " 2ND" in gl:
+            line = 2
+        elif " 3RD" in gl:
+            line = 3
+        else:
+            line = 9
+        return (code, line, g)
+
+    out.extend(sorted(leftovers, key=_sort_key))
+
+    if not out:
+        out = ["706 - SUPERSPORT 1st"]
+
+    return out[:max_groups]
+
+
 def _build_key_fitment_table(silver: pd.DataFrame, latest: pd.Timestamp, prev: pd.Timestamp | None) -> pd.DataFrame:
     silver = silver.copy()
     silver["snapshot_date"] = pd.to_datetime(silver["snapshot_date"], errors="coerce")
@@ -941,222 +1004,39 @@ def build_pdf_report(
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        # Page 3: Segment-level checkpoint (Supersport 1st)
+        focused_groups = _focused_segment_groups(max_groups=10)
+        primary_group = "706 - SUPERSPORT 1st"
+        if primary_group not in focused_groups:
+            primary_group = focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
+
+        # Page 3: Segment-level checkpoint (first focused group, default Supersport 1st)
         fig = plt.figure(figsize=(16, 9))
         _draw_segment_pattern_checkpoint_page(
             fig,
             silver=silver,
             latest=latest,
             prev=prev,
-            segment_reference_group="706 - SUPERSPORT 1st",
+            segment_reference_group=primary_group,
         )
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        # Page 4: Fitment and segment dynamics
-        fig = plt.figure(figsize=(16, 9))
-        gs = GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.25)
-        _decorate_page(
-            fig,
-            "Fitment and Segment Dynamics",
-            "Rows-based fitment mix and rim exposure across Pirelli and key competitors (latest snapshot)",
-        )
+        if primary_group not in focused_groups:
+            primary_group = focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
 
-        latest_fit = fitment[fitment["snapshot_date"] == latest].copy()
-        latest_fit = latest_fit[latest_fit["brand"].isin(FOCUS_BRANDS)]
-        mix = latest_fit.pivot_table(index="brand", columns="fitment_position", values="rows", aggfunc="sum", fill_value=0)
-        mix = mix.reindex(FOCUS_BRANDS).fillna(0)
-        ax = fig.add_subplot(gs[0, 0])
-        left = np.zeros(len(mix))
-        for col in ["Front", "Rear", "Unknown"]:
-            vals = mix[col].to_numpy() if col in mix.columns else np.zeros(len(mix))
-            ax.barh(mix.index, vals, left=left, label=col, alpha=0.9)
-            left = left + vals
-        ax.set_title("Fitment Position Mix by Brand (Rows)")
-        _add_subplot_note(ax, "Fitment inferred from product name token: FRONT/REAR; remaining entries marked Unknown.")
-        ax.set_xlabel("Rows")
-        ax.legend(frameon=False, ncol=3)
-        ax.grid(axis="x", alpha=0.25)
-
-        latest_seg = segment[segment["snapshot_date"] == latest].copy()
-        latest_seg = latest_seg[latest_seg["brand"].isin(FOCUS_BRANDS)]
-        seg_key = "analysis_fitment_key" if "analysis_fitment_key" in latest_seg.columns else "rim_group"
-        seg_pivot = latest_seg.pivot_table(index=seg_key, columns="brand", values="rows", aggfunc="sum", fill_value=0)
-        seg_pivot = seg_pivot.sort_values(by="Pirelli", ascending=False) if "Pirelli" in seg_pivot.columns else seg_pivot
-        seg_pivot = seg_pivot.head(8)
-        ax2 = fig.add_subplot(gs[0, 1])
-        x = np.arange(len(seg_pivot.index))
-        width = 0.15
-        for i, b in enumerate(FOCUS_BRANDS):
-            vals = seg_pivot[b].to_numpy() if b in seg_pivot.columns else np.zeros(len(x))
-            ax2.bar(x + (i - 2) * width, vals, width=width, color=_brand_color(b), label=b, alpha=0.85)
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(seg_pivot.index)
-        ax2.set_title("Top Fitment/Size Exposure by Brand (Rows)")
-        _add_subplot_note(ax2, "Focus on top fitment/size keys by Pirelli row footprint.")
-        ax2.set_ylabel("Rows")
-        ax2.yaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
-        ax2.grid(axis="y", alpha=0.25)
-        ax2.legend(frameon=False, fontsize=8, ncol=3)
-
-        latest_brand_view = brand[brand["snapshot_date"] == latest][["brand", "rows", "unique_sellers", "stock_qty", "median_price"]].copy()
-        latest_brand_view = latest_brand_view.sort_values("rows", ascending=False)
-        ax3 = fig.add_subplot(gs[1, :])
-        ax3.axis("off")
-        tb = latest_brand_view.copy()
-        tb["rows"] = tb["rows"].map("{:,.0f}".format)
-        tb["unique_sellers"] = tb["unique_sellers"].map("{:,.0f}".format)
-        tb["stock_qty"] = tb["stock_qty"].map(lambda x: f"{x:,.0f}" if pd.notna(x) else "0")
-        tb["median_price"] = tb["median_price"].map("{:.1f}".format)
-        tb.columns = ["Brand", "Rows", "Sellers", "Stock", "Median Price"]
-        table = ax3.table(cellText=tb.values, colLabels=tb.columns, loc="center", cellLoc="center")
-        table.auto_set_font_size(False)
-        table.set_fontsize(9)
-        table.scale(1, 1.35)
-        ax3.set_title("Competitor Checkpoint - Latest Week Summary")
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
-
-        # Page 5: Seller checkpoint with bubble chart
-        fig = plt.figure(figsize=(16, 9))
-        gs = GridSpec(2, 2, figure=fig, height_ratios=[1.25, 1.0], hspace=0.35, wspace=0.25)
-        _decorate_page(
-            fig,
-            "Seller Focus",
-            "Top offerors by listing volume with stock-weighted footprint and Pirelli concentration",
-        )
-
-        latest_seller = seller[seller["snapshot_date"] == latest].copy()
-        latest_seller = latest_seller[latest_seller["brand"].isin(FOCUS_BRANDS)]
-        seller_rollup = (
-            latest_seller.groupby("seller_norm", dropna=False)
-            .agg(rows=("rows", "sum"), stock_qty=("stock_qty", "sum"), median_price=("median_price", "median"))
-            .reset_index()
-        )
-        pirelli_seller = latest_seller[latest_seller["brand"] == "Pirelli"][["seller_norm", "rows"]].rename(
-            columns={"rows": "pirelli_rows"}
-        )
-        seller_rollup = seller_rollup.merge(pirelli_seller, on="seller_norm", how="left").fillna({"pirelli_rows": 0})
-        seller_rollup["pirelli_share"] = np.where(
-            seller_rollup["rows"] > 0, seller_rollup["pirelli_rows"] / seller_rollup["rows"], 0
-        )
-        top_sellers = seller_rollup.sort_values("rows", ascending=False).head(25)
-
-        ax = fig.add_subplot(gs[0, :])
-        sizes = np.clip(top_sellers["stock_qty"].to_numpy() / 20.0, 40, 3000)
-        scatter = ax.scatter(
-            top_sellers["median_price"],
-            top_sellers["rows"],
-            s=sizes,
-            c=top_sellers["pirelli_share"],
-            cmap="YlOrRd",
-            alpha=0.65,
-            edgecolors="#1F2937",
-            linewidth=0.5,
-        )
-        ax.set_title("Top Sellers Bubble Map | size = stock, color = Pirelli share")
-        _add_subplot_note(
-            ax,
-            "Each bubble is a seller. X: median price (PLN), Y: total rows, size: stock quantity, color: Pirelli row share.",
-        )
-        ax.set_xlabel("Median Price (PLN)")
-        ax.set_ylabel("Rows")
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
-        ax.grid(alpha=0.25)
-        for row in top_sellers.head(8).itertuples(index=False):
-            ax.text(row.median_price, row.rows, str(row.seller_norm)[:28], fontsize=7, ha="left", va="bottom")
-        fig.colorbar(scatter, ax=ax, fraction=0.02, pad=0.01, label="Pirelli share")
-
-        ax2 = fig.add_subplot(gs[1, 0])
-        table_df = top_sellers.sort_values("pirelli_rows", ascending=False).head(12).copy()
-        table_df = table_df[["seller_norm", "pirelli_rows", "rows", "pirelli_share", "median_price"]]
-        table_df["pirelli_share"] = (table_df["pirelli_share"] * 100).map(lambda x: f"{x:.1f}%")
-        table_df["median_price"] = table_df["median_price"].map(lambda x: f"{x:.1f}")
-        table_df.columns = ["Seller", "Pirelli Rows", "Total Rows", "Pirelli Share", "Median Price"]
-        ax2.axis("off")
-        t = ax2.table(cellText=table_df.values, colLabels=table_df.columns, cellLoc="center", loc="center")
-        t.auto_set_font_size(False)
-        t.set_fontsize(8)
-        t.scale(1, 1.25)
-        ax2.set_title("Top 12 Sellers by Pirelli Rows")
-
-        ax3 = fig.add_subplot(gs[1, 1])
-        pirelli_only = latest_seller[latest_seller["brand"] == "Pirelli"].sort_values("rows", ascending=True).tail(12)
-        ax3.barh(pirelli_only["seller_norm"].str.slice(0, 26), pirelli_only["rows"], color="#F4C300", edgecolor="#1F2937")
-        ax3.set_title("Pirelli Rows by Seller (Top 12)")
-        ax3.grid(axis="x", alpha=0.25)
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
-
-        # Page 6: Key fitment product checkpoint
-        fig = plt.figure(figsize=(16, 9))
-        gs = GridSpec(2, 1, figure=fig, height_ratios=[0.35, 1.65], hspace=0.18)
-        _decorate_page(
-            fig,
-            "Key Fitment Checkpoint",
-            "Top stocked fitments by brand (pattern + size), including latest price level and WoW movement",
-        )
-
-        key_fit = _build_key_fitment_table(silver, latest=latest, prev=prev)
-        ax_head = fig.add_subplot(gs[0, 0])
-        ax_head.axis("off")
-        ax_head.text(
-            0.01,
-            0.65,
-            "Method: grouped by brand + pattern family + size. Top 5 per brand by latest stock.",
-            fontsize=10,
-            color="#374151",
-            transform=ax_head.transAxes,
-        )
-        ax_head.text(
-            0.01,
-            0.2,
-            "Columns align to the Italian checkpoint logic: offeror, stock, price level, and week-over-week movement.",
-            fontsize=10,
-            color="#374151",
-            transform=ax_head.transAxes,
-        )
-
-        ax_tbl = fig.add_subplot(gs[1, 0])
-        ax_tbl.axis("off")
-        if key_fit.empty:
-            ax_tbl.text(0.5, 0.5, "No key fitment data available.", ha="center", va="center")
-        else:
-            show = key_fit.copy()
-            show["stock_qty"] = show["stock_qty"].map(lambda x: f"{x:,.0f}")
-            show["median_price"] = show["median_price"].map(lambda x: f"{x:.1f}" if pd.notna(x) else "n/a")
-            show["wow_price_delta"] = show["wow_price_delta"].map(lambda x: f"{x:+.1f}" if pd.notna(x) else "n/a")
-            show["wow_rows_delta"] = show["wow_rows_delta"].map(lambda x: f"{x:+.0f}" if pd.notna(x) else "n/a")
-            show = show[
-                [
-                    "brand",
-                    "pattern_family",
-                    "size_norm",
-                    "seller_norm",
-                    "stock_qty",
-                    "rows",
-                    "median_price",
-                    "wow_price_delta",
-                    "wow_rows_delta",
-                ]
-            ]
-            show.columns = [
-                "Brand",
-                "Pattern",
-                "Size",
-                "Top Seller",
-                "Stock",
-                "Rows",
-                "Median Price",
-                "WoW Price",
-                "WoW Rows",
-            ]
-            tbl = ax_tbl.table(cellText=show.values, colLabels=show.columns, cellLoc="center", loc="center")
-            tbl.auto_set_font_size(False)
-            tbl.set_fontsize(8)
-            tbl.scale(1.0, 1.18)
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        # Page 4..12: Remaining focused segment groups in same template as page 3.
+        remaining_groups = [g for g in focused_groups if g != primary_group][:9]
+        for group in remaining_groups:
+            fig = plt.figure(figsize=(16, 9))
+            _draw_segment_pattern_checkpoint_page(
+                fig,
+                silver=silver,
+                latest=latest,
+                prev=prev,
+                segment_reference_group=group,
+            )
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)
 
     logger.info("PDF report written: %s", output)
     return output
