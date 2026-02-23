@@ -351,7 +351,7 @@ def _draw_positioning_across_lines_page(
 
         col_labels = ["Lines"]
         for b in brands:
-            col_labels.extend([b, "INDEX (1st PI=100)"])
+            col_labels.extend([f"{b}\nPRICE", "INDEX\nPI1=100"])
 
         row_labels = [("1ST", "1st Line"), ("2ND", "2nd Line"), ("3RD", "3rd Line")]
         cell_text: list[list[str]] = []
@@ -366,7 +366,7 @@ def _draw_positioning_across_lines_page(
             cell_text.append(row)
 
         ncols = len(col_labels)
-        first_w = 0.10
+        first_w = 0.09
         other_w = (1.0 - first_w) / (ncols - 1)
         col_widths = [first_w] + [other_w] * (ncols - 1)
 
@@ -379,8 +379,8 @@ def _draw_positioning_across_lines_page(
             colWidths=col_widths,
         )
         table.auto_set_font_size(False)
-        table.set_fontsize(10)
-        table.scale(1.0, 2.0)
+        table.set_fontsize(8.6)
+        table.scale(1.0, 2.05)
 
         for (r, c), cell in table.get_celld().items():
             cell.set_edgecolor("#222222")
@@ -388,13 +388,14 @@ def _draw_positioning_across_lines_page(
             if r == 0:
                 cell.set_facecolor("#EDEDED")
                 cell.get_text().set_fontweight("bold")
-                cell.get_text().set_fontsize(8.6)
+                cell.get_text().set_fontsize(7.0)
+                cell.set_height(cell.get_height() * 1.28)
             elif c > 0 and c % 2 == 0:
                 cell.set_facecolor("#E8EFDF")
             else:
                 cell.set_facecolor("#FFFFFF")
 
-        ax.set_title(segment, fontsize=13, fontweight="bold", loc="left", pad=8)
+        ax.set_title(segment, fontsize=12, fontweight="bold", loc="left", pad=7)
 
     _build_table_ax(fig.add_subplot(gs[0, 0]), "SUPERSPORT")
     _build_table_ax(fig.add_subplot(gs[1, 0]), "SPORT TOURING RADIAL")
