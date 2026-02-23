@@ -7,8 +7,14 @@ import numpy as np
 import pandas as pd
 
 from .canonical import load_canonical_mapping
-from .settings import FOCUS_BRANDS, GOLD_DIR, LOGOS_DIR, RECAP_BRANDS, REPORT_DIR, SILVER_DIR
-
+from .settings import (
+    FOCUS_BRANDS,
+    GOLD_DIR,
+    LOGOS_DIR,
+    RECAP_BRANDS,
+    REPORT_DIR,
+    SILVER_DIR,
+)
 
 BRAND_COLORS = {
     "Pirelli": "#F4C300",
@@ -37,12 +43,22 @@ def _read_recap_latest(gold_dir: Path) -> pd.DataFrame:
     recap["snapshot_date"] = pd.to_datetime(recap["snapshot_date"], errors="coerce")
     latest = recap["snapshot_date"].max()
     recap = recap[recap["snapshot_date"] == latest].copy()
-    recap["positioning_display"] = recap["positioning_index_round"].map(lambda x: "-" if pd.isna(x) else f"{int(x)}")
-    recap["vs_prev_week_display"] = recap["vs_prev_week_round"].map(lambda x: "-" if pd.isna(x) else f"{int(x):+d}")
-    recap["vs_py_display"] = recap["vs_py_round"].map(lambda x: "-" if pd.isna(x) else f"{int(x):+d}")
+    recap["positioning_display"] = recap["positioning_index_round"].map(
+        lambda x: "-" if pd.isna(x) else f"{int(x)}"
+    )
+    recap["vs_prev_week_display"] = recap["vs_prev_week_round"].map(
+        lambda x: "-" if pd.isna(x) else f"{int(x):+d}"
+    )
+    recap["vs_py_display"] = recap["vs_py_round"].map(
+        lambda x: "-" if pd.isna(x) else f"{int(x):+d}"
+    )
     iso = pd.to_datetime(recap["snapshot_date"], errors="coerce").dt.isocalendar()
-    recap["week_label"] = iso["year"].astype("Int64").astype("string") + "-W" + iso["week"].astype("Int64").map(
-        lambda x: f"{int(x):02d}" if pd.notna(x) else "--"
+    recap["week_label"] = (
+        iso["year"].astype("Int64").astype("string")
+        + "-W"
+        + iso["week"]
+        .astype("Int64")
+        .map(lambda x: f"{int(x):02d}" if pd.notna(x) else "--")
     )
     return recap
 
@@ -57,7 +73,9 @@ def _read_silver(silver_dir: Path) -> pd.DataFrame:
             pass
     if csv_file.exists():
         return pd.read_csv(csv_file, low_memory=False)
-    raise FileNotFoundError("No silver dataset found (expected motorcycle_weekly.parquet or .csv).")
+    raise FileNotFoundError(
+        "No silver dataset found (expected motorcycle_weekly.parquet or .csv)."
+    )
 
 
 def _latest_snapshot(df: pd.DataFrame, date_col: str = "snapshot_date") -> str:
@@ -74,7 +92,9 @@ def _week_label(date_str: str) -> str:
     return f"W{int(dt.isocalendar().week):02d}"
 
 
-def _safe_prev_date(series: pd.Series) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+def _safe_prev_date(
+    series: pd.Series,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
     values = sorted(pd.to_datetime(series, errors="coerce").dropna().unique())
     if not values:
         return None, None
@@ -96,7 +116,9 @@ def _logo_path(brand: str, logos_dir: Path = LOGOS_DIR) -> Path | None:
     return None
 
 
-def _add_logo_or_label(ax, brand: str, x: float, y: float, logos_dir: Path = LOGOS_DIR) -> None:
+def _add_logo_or_label(
+    ax, brand: str, x: float, y: float, logos_dir: Path = LOGOS_DIR
+) -> None:
     from matplotlib.offsetbox import AnnotationBbox, OffsetImage
     import matplotlib.pyplot as plt
 
@@ -118,14 +140,26 @@ def _add_logo_or_label(ax, brand: str, x: float, y: float, logos_dir: Path = LOG
         ha="center",
         fontsize=8,
         color="#111827",
-        bbox={"boxstyle": "round,pad=0.2", "fc": _brand_color(brand), "ec": "#111827", "lw": 0.5},
+        bbox={
+            "boxstyle": "round,pad=0.2",
+            "fc": _brand_color(brand),
+            "ec": "#111827",
+            "lw": 0.5,
+        },
     )
 
 
-def _decorate_page(fig, title: str, subtitle: str) -> None:
+def _decorate_page(
+        fig, 
+        title: str, 
+        subtitle: str | None = None,
+        ) -> None:
     fig.subplots_adjust(top=0.84, bottom=0.07, left=0.05, right=0.98)
-    fig.suptitle(title, fontsize=17, fontweight="bold", x=0.03, y=0.975, ha="left")
-    fig.text(0.03, 0.935, subtitle, fontsize=9.5, color="#374151", ha="left")
+    if subtitle:
+        fig.suptitle(title, fontsize=17, fontweight="bold", x=0.03, y=0.975, ha="left")
+        fig.text(0.03, 0.935, subtitle, fontsize=9.5, color="#374151", ha="left")
+    else:
+        fig.suptitle(title, fontsize=17, fontweight="bold", x=0.03, y=0.95, ha="left")
 
 
 def _add_page_footer(fig, page_no: int, lines: list[str]) -> None:
@@ -160,14 +194,27 @@ def _add_page_footer(fig, page_no: int, lines: list[str]) -> None:
         color="#111827",
         style="italic",
     )
-    ax.text(0.02, 0.008, f"Page {page_no}", transform=ax.transAxes, ha="left", va="bottom", fontsize=8, color="#4B5563")
+    ax.text(
+        0.02,
+        0.008,
+        f"Page {page_no}",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=8,
+        color="#4B5563",
+    )
 
 
 def _segment_footer_lines(segment_reference_group: str, key_fitments: str) -> list[str]:
     seg = str(segment_reference_group or "").strip()
     if " - " in seg:
         seg = seg.split(" - ", 1)[1].strip()
-    seg = seg.replace(" 1st", " 1st line").replace(" 2nd", " 2nd line").replace(" 3rd", " 3rd line")
+    seg = (
+        seg.replace(" 1st", " 1st line")
+        .replace(" 2nd", " 2nd line")
+        .replace(" 3rd", " 3rd line")
+    )
     key = str(key_fitments or "").strip()
     if not key:
         key = "-"
@@ -177,10 +224,6 @@ def _segment_footer_lines(segment_reference_group: str, key_fitments: str) -> li
         "Weighted on Oponeo.pl stock",
         f"Key fitments: {key}",
     ]
-
-
-def _add_subplot_note(ax, note: str) -> None:
-    ax.text(0.0, 1.01, note, transform=ax.transAxes, fontsize=8, color="#4B5563", va="bottom", ha="left")
 
 
 def _format_date_axis(ax, max_ticks: int = 6) -> None:
@@ -221,16 +264,25 @@ def _draw_brand_logo_strip(fig, brands: list[str], logos_dir: Path = LOGOS_DIR) 
             ha="center",
             fontsize=8,
             color="#111827",
-            bbox={"boxstyle": "round,pad=0.18", "fc": _brand_color(brand), "ec": "#111827", "lw": 0.5},
+            bbox={
+                "boxstyle": "round,pad=0.18",
+                "fc": _brand_color(brand),
+                "ec": "#111827",
+                "lw": 0.5,
+            },
             transform=ax.transAxes,
         )
 
 
-def _draw_recap_matrix_page(fig, recap_latest: pd.DataFrame, logos_dir: Path = LOGOS_DIR) -> None:
+def _draw_recap_matrix_page(
+    fig, recap_latest: pd.DataFrame, logos_dir: Path = LOGOS_DIR
+) -> None:
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
 
-    def _place_logo_preserve_ratio(ax, img, x: float, y: float, w: float, h: float) -> None:
+    def _place_logo_preserve_ratio(
+        ax, img, x: float, y: float, w: float, h: float
+    ) -> None:
         ih, iw = img.shape[:2]
         if ih <= 0 or iw <= 0 or w <= 0 or h <= 0:
             return
@@ -253,16 +305,47 @@ def _draw_recap_matrix_page(fig, recap_latest: pd.DataFrame, logos_dir: Path = L
     ax = fig.add_subplot(111)
     ax.axis("off")
 
-    week_label = recap_latest["week_label"].iloc[0] if not recap_latest.empty and "week_label" in recap_latest.columns else "-"
+    week_label = (
+        recap_latest["week_label"].iloc[0]
+        if not recap_latest.empty and "week_label" in recap_latest.columns
+        else "-"
+    )
     title = f"RECAP BY BRAND - Key Fitments, weighted by Pirelli Volumes, {week_label} Poland"
-    ax.add_patch(Rectangle((0.02, 0.89), 0.96, 0.08, transform=ax.transAxes, facecolor="#A9CCE3", edgecolor="none"))
-    ax.text(0.03, 0.925, title, transform=ax.transAxes, fontsize=17, fontweight="bold", color="#2C3E50", va="center")
+    ax.add_patch(
+        Rectangle(
+            (0.02, 0.89),
+            0.96,
+            0.08,
+            transform=ax.transAxes,
+            facecolor="#A9CCE3",
+            edgecolor="none",
+        )
+    )
+    ax.text(
+        0.03,
+        0.925,
+        title,
+        transform=ax.transAxes,
+        fontsize=17,
+        fontweight="bold",
+        color="#2C3E50",
+        va="center",
+    )
 
     headers = ["Brand", "Positioning", "vs Prev. Week", "vs PY"]
     col_x = [0.24, 0.48, 0.62, 0.76]
     col_w = [0.18, 0.08, 0.08, 0.08]
     for h, x, w in zip(headers, col_x, col_w):
-        ax.text(x + w / 2, 0.74, h, transform=ax.transAxes, ha="center", va="bottom", fontsize=12, fontweight="bold")
+        ax.text(
+            x + w / 2,
+            0.74,
+            h,
+            transform=ax.transAxes,
+            ha="center",
+            va="bottom",
+            fontsize=12,
+            fontweight="bold",
+        )
 
     rows = recap_latest.copy()
     rows["brand"] = pd.Categorical(rows["brand"], categories=RECAP_BRANDS, ordered=True)
@@ -277,12 +360,24 @@ def _draw_recap_matrix_page(fig, recap_latest: pd.DataFrame, logos_dir: Path = L
 
         # Brand cell with logo.
         bx, bw = col_x[0], col_w[0]
-        ax.add_patch(Rectangle((bx, y), bw, row_h * 0.78, transform=ax.transAxes, facecolor="#FFFFFF", edgecolor=brand_color, lw=1.4))
+        ax.add_patch(
+            Rectangle(
+                (bx, y),
+                bw,
+                row_h * 0.78,
+                transform=ax.transAxes,
+                facecolor="#FFFFFF",
+                edgecolor=brand_color,
+                lw=1.4,
+            )
+        )
         logo = _logo_path(brand, logos_dir=logos_dir)
         if logo:
             try:
                 img = plt.imread(logo)
-                _place_logo_preserve_ratio(ax, img, bx + 0.005, y + 0.004, bw - 0.010, row_h * 0.78 - 0.008)
+                _place_logo_preserve_ratio(
+                    ax, img, bx + 0.005, y + 0.004, bw - 0.010, row_h * 0.78 - 0.008
+                )
                 ax.text(
                     bx + bw / 2,
                     y + 0.01,
@@ -294,15 +389,54 @@ def _draw_recap_matrix_page(fig, recap_latest: pd.DataFrame, logos_dir: Path = L
                     color="#374151",
                 )
             except Exception:
-                ax.text(bx + bw / 2, y + row_h * 0.39, brand.upper(), transform=ax.transAxes, ha="center", va="center", fontsize=12)
+                ax.text(
+                    bx + bw / 2,
+                    y + row_h * 0.39,
+                    brand.upper(),
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                    fontsize=12,
+                )
         else:
-            ax.text(bx + bw / 2, y + row_h * 0.39, brand.upper(), transform=ax.transAxes, ha="center", va="center", fontsize=12)
+            ax.text(
+                bx + bw / 2,
+                y + row_h * 0.39,
+                brand.upper(),
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=12,
+            )
 
-        values = [str(row.positioning_display), str(row.vs_prev_week_display), str(row.vs_py_display)]
+        values = [
+            str(row.positioning_display),
+            str(row.vs_prev_week_display),
+            str(row.vs_py_display),
+        ]
         for j, val in enumerate(values, start=1):
             x, w = col_x[j], col_w[j]
-            ax.add_patch(Rectangle((x, y), w, row_h * 0.78, transform=ax.transAxes, facecolor="#F4F6F7", edgecolor=brand_color, lw=1.2))
-            ax.text(x + w / 2, y + row_h * 0.39, val, transform=ax.transAxes, ha="center", va="center", fontsize=17, color="#566573")
+            ax.add_patch(
+                Rectangle(
+                    (x, y),
+                    w,
+                    row_h * 0.78,
+                    transform=ax.transAxes,
+                    facecolor="#F4F6F7",
+                    edgecolor=brand_color,
+                    lw=1.2,
+                )
+            )
+            ax.text(
+                x + w / 2,
+                y + row_h * 0.39,
+                val,
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=17,
+                color="#566573",
+            )
 
 
 def _build_positioning_across_lines_latest(
@@ -312,7 +446,10 @@ def _build_positioning_across_lines_latest(
         brands = list(RECAP_BRANDS)
 
     work = silver.copy()
-    if "snapshot_date" not in work.columns or "segment_reference_group" not in work.columns:
+    if (
+        "snapshot_date" not in work.columns
+        or "segment_reference_group" not in work.columns
+    ):
         return {}, brands
 
     is_hc = work.get("is_high_confidence_match")
@@ -379,10 +516,29 @@ def _draw_positioning_across_lines_page(
             return "-"
         return f"{int(round(float(v)))}"
 
-    tables, brands = _build_positioning_across_lines_latest(silver=silver, latest=latest, brands=list(RECAP_BRANDS))
+    tables, brands = _build_positioning_across_lines_latest(
+        silver=silver, latest=latest, brands=list(RECAP_BRANDS)
+    )
     fig.subplots_adjust(left=0.02, right=0.98, top=0.96, bottom=0.05)
-    fig.text(0.5, 0.95, "POSITIONING ACROSS LINES", ha="center", va="center", fontsize=27, color="#D70000", fontweight="bold")
-    fig.text(0.5, 0.905, "First 3 Offerors price on Market Segment's key fitment", ha="center", va="center", fontsize=18, color="#7A8793")
+    fig.text(
+        0.5,
+        0.95,
+        "POSITIONING ACROSS LINES",
+        ha="center",
+        va="center",
+        fontsize=27,
+        color="#D70000",
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.905,
+        "First 3 Offerors price on Market Segment's key fitment",
+        ha="center",
+        va="center",
+        fontsize=18,
+        color="#7A8793",
+    )
 
     gs = GridSpec(2, 1, figure=fig, hspace=0.17, top=0.84, bottom=0.06)
 
@@ -390,7 +546,14 @@ def _draw_positioning_across_lines_page(
         ax.axis("off")
         seg_tbl = tables.get(segment)
         if seg_tbl is None:
-            ax.text(0.5, 0.5, f"No data for {segment}", ha="center", va="center", fontsize=12)
+            ax.text(
+                0.5,
+                0.5,
+                f"No data for {segment}",
+                ha="center",
+                va="center",
+                fontsize=12,
+            )
             return
 
         col_labels = ["Lines"]
@@ -404,8 +567,16 @@ def _draw_positioning_across_lines_page(
             for b in brands:
                 price_col = (b, "price")
                 idx_col = (b, "index")
-                price = seg_tbl.at[line_key, price_col] if (line_key in seg_tbl.index and price_col in seg_tbl.columns) else np.nan
-                idxv = seg_tbl.at[line_key, idx_col] if (line_key in seg_tbl.index and idx_col in seg_tbl.columns) else np.nan
+                price = (
+                    seg_tbl.at[line_key, price_col]
+                    if (line_key in seg_tbl.index and price_col in seg_tbl.columns)
+                    else np.nan
+                )
+                idxv = (
+                    seg_tbl.at[line_key, idx_col]
+                    if (line_key in seg_tbl.index and idx_col in seg_tbl.columns)
+                    else np.nan
+                )
                 row.extend([_fmt_price(price), _fmt_idx(idxv)])
             cell_text.append(row)
 
@@ -459,9 +630,16 @@ def _build_segment_pattern_checkpoint(
     work["snapshot_date"] = pd.to_datetime(work["snapshot_date"], errors="coerce")
     work["price_pln"] = pd.to_numeric(work["price_pln"], errors="coerce")
     work["stock_qty"] = pd.to_numeric(work.get("stock_qty"), errors="coerce").fillna(0)
-    work["pattern_set"] = work.get("pattern_set", pd.Series(index=work.index, dtype="string")).astype("string").str.strip()
+    work["pattern_set"] = (
+        work.get("pattern_set", pd.Series(index=work.index, dtype="string"))
+        .astype("string")
+        .str.strip()
+    )
     work = work[work["brand"].isin(brands)]
-    work = work[work["segment_reference_group"].astype("string").str.strip() == segment_reference_group]
+    work = work[
+        work["segment_reference_group"].astype("string").str.strip()
+        == segment_reference_group
+    ]
     work = work[work["price_pln"].notna()]
     if "is_high_confidence_match" in work.columns:
         work = work[work["is_high_confidence_match"].fillna(False)]
@@ -475,9 +653,16 @@ def _build_segment_pattern_checkpoint(
 
     top_patterns = (
         latest_slice.groupby(["brand", "pattern_set"], dropna=False)
-        .agg(stock_qty=("stock_qty", "sum"), rows=("product_code", "count"), price_cw=("price_pln", "median"))
+        .agg(
+            stock_qty=("stock_qty", "sum"),
+            rows=("product_code", "count"),
+            price_cw=("price_pln", "median"),
+        )
         .reset_index()
-        .sort_values(["brand", "stock_qty", "rows", "price_cw", "pattern_set"], ascending=[True, False, False, False, True])
+        .sort_values(
+            ["brand", "stock_qty", "rows", "price_cw", "pattern_set"],
+            ascending=[True, False, False, False, True],
+        )
         .groupby("brand", as_index=False)
         .head(1)
     )
@@ -503,7 +688,12 @@ def _build_segment_pattern_checkpoint(
             continue
 
         bp = work[(work["brand"] == brand) & (work["pattern_set"] == pattern)].copy()
-        ts = bp.groupby("snapshot_date", dropna=False).agg(price=("price_pln", "median")).reset_index().sort_values("snapshot_date")
+        ts = (
+            bp.groupby("snapshot_date", dropna=False)
+            .agg(price=("price_pln", "median"))
+            .reset_index()
+            .sort_values("snapshot_date")
+        )
         if ts.empty:
             rows.append(record)
             continue
@@ -536,8 +726,16 @@ def _build_segment_pattern_checkpoint(
     series_df = pd.DataFrame(series_rows)
 
     pirelli_row = table[table["brand"] == "Pirelli"]
-    pirelli_cw = float(pirelli_row["price_cw"].iloc[0]) if not pirelli_row.empty and pd.notna(pirelli_row["price_cw"].iloc[0]) else np.nan
-    pirelli_lw = float(pirelli_row["price_lw"].iloc[0]) if not pirelli_row.empty and pd.notna(pirelli_row["price_lw"].iloc[0]) else np.nan
+    pirelli_cw = (
+        float(pirelli_row["price_cw"].iloc[0])
+        if not pirelli_row.empty and pd.notna(pirelli_row["price_cw"].iloc[0])
+        else np.nan
+    )
+    pirelli_lw = (
+        float(pirelli_row["price_lw"].iloc[0])
+        if not pirelli_row.empty and pd.notna(pirelli_row["price_lw"].iloc[0])
+        else np.nan
+    )
 
     table["index_cw"] = np.where(
         pd.notna(table["price_cw"]) & pd.notna(pirelli_cw) & (pirelli_cw != 0),
@@ -551,12 +749,16 @@ def _build_segment_pattern_checkpoint(
     )
     table["delta_index"] = table["index_cw"] - table["index_lw"]
     table["var_vs_py_pct"] = np.where(
-        pd.notna(table["price_cw"]) & pd.notna(table["price_py"]) & (table["price_py"] != 0),
+        pd.notna(table["price_cw"])
+        & pd.notna(table["price_py"])
+        & (table["price_py"] != 0),
         100 * (table["price_cw"] / table["price_py"] - 1),
         np.nan,
     )
     table["var_vs_lw_pct"] = np.where(
-        pd.notna(table["price_cw"]) & pd.notna(table["price_lw"]) & (table["price_lw"] != 0),
+        pd.notna(table["price_cw"])
+        & pd.notna(table["price_lw"])
+        & (table["price_lw"] != 0),
         100 * (table["price_cw"] / table["price_lw"] - 1),
         np.nan,
     )
@@ -601,19 +803,32 @@ def _draw_segment_pattern_checkpoint_page(
         brands=list(RECAP_BRANDS),
     )
 
-    seg_label = str(segment_reference_group).split(" - ", 1)[-1] if " - " in str(segment_reference_group) else str(segment_reference_group)
+    seg_label = (
+        str(segment_reference_group).split(" - ", 1)[-1]
+        if " - " in str(segment_reference_group)
+        else str(segment_reference_group)
+    )
     _decorate_page(
         fig,
-        f"Segment Checkpoint - {seg_label.title()}",
-        "Brand -> key pattern set (latest) with PY/LW/CW prices, index vs Pirelli, and weekly trend",
+        f"{seg_label.title()}",
+        # "Brand -> key pattern set with PY/LW/CW prices, index vs Pirelli, and weekly trend",
     )
-    gs = GridSpec(2, 1, figure=fig, height_ratios=[1.02, 1.08], hspace=0.24, top=0.82, bottom=0.14)
+    gs = GridSpec(
+        2, 1, figure=fig, height_ratios=[1.02, 1.08], hspace=0.24, top=0.82, bottom=0.14
+    )
 
     ax_tbl = fig.add_subplot(gs[0, 0])
     ax_tbl.axis("off")
 
     if table.empty:
-        ax_tbl.text(0.5, 0.5, f"No high-confidence data for {seg_label}.", ha="center", va="center", fontsize=11)
+        ax_tbl.text(
+            0.5,
+            0.5,
+            f"No high-confidence data for {seg_label}.",
+            ha="center",
+            va="center",
+            fontsize=11,
+        )
     else:
         # Rounded container similar to the Italian look.
         ax_tbl.add_patch(
@@ -708,12 +923,16 @@ def _draw_segment_pattern_checkpoint_page(
                 cell.get_text().set_text("")
                 img = plt.imread(path)
                 bbox = cell.get_window_extent(renderer=renderer)
-                (x0, y0), (x1, y1) = ax_tbl.transAxes.inverted().transform([[bbox.x0, bbox.y0], [bbox.x1, bbox.y1]])
+                (x0, y0), (x1, y1) = ax_tbl.transAxes.inverted().transform(
+                    [[bbox.x0, bbox.y0], [bbox.x1, bbox.y1]]
+                )
                 w = max((x1 - x0) * 0.86, 0.001)
                 h = max((y1 - y0) * 0.70, 0.001)
                 lx = x0 + (x1 - x0 - w) / 2
                 ly = y0 + (y1 - y0 - h) / 2
-                lax = ax_tbl.inset_axes([lx, ly, w, h], transform=ax_tbl.transAxes, zorder=5)
+                lax = ax_tbl.inset_axes(
+                    [lx, ly, w, h], transform=ax_tbl.transAxes, zorder=5
+                )
                 lax.imshow(img)
                 lax.set_aspect("auto")
                 lax.axis("off")
@@ -728,7 +947,9 @@ def _draw_segment_pattern_checkpoint_page(
         return
 
     series_df = series_df.copy()
-    series_df["snapshot_date"] = pd.to_datetime(series_df["snapshot_date"], errors="coerce")
+    series_df["snapshot_date"] = pd.to_datetime(
+        series_df["snapshot_date"], errors="coerce"
+    )
     valid_dates = sorted(series_df["snapshot_date"].dropna().unique().tolist())
     if not valid_dates:
         ax_ts.axis("off")
@@ -751,7 +972,10 @@ def _draw_segment_pattern_checkpoint_page(
     for row in table.itertuples(index=False):
         if str(row.pattern_set) == "-" or pd.isna(row.pattern_set):
             continue
-        s = plot_df[(plot_df["brand"] == row.brand) & (plot_df["pattern_set"] == row.pattern_set)].sort_values("snapshot_date")
+        s = plot_df[
+            (plot_df["brand"] == row.brand)
+            & (plot_df["pattern_set"] == row.pattern_set)
+        ].sort_values("snapshot_date")
         if s.empty:
             continue
         ax_ts.plot(
@@ -778,18 +1002,20 @@ def _draw_segment_pattern_checkpoint_page(
         if x_vals[-1] not in tick_vals:
             tick_vals.append(x_vals[-1])
         ax_ts.set_xticks(tick_vals)
-        ax_ts.set_xticklabels([f"W{int(x.isocalendar().week):02d}" for x in tick_vals], fontsize=9)
+        ax_ts.set_xticklabels(
+            [f"W{int(x.isocalendar().week):02d}" for x in tick_vals], fontsize=9
+        )
 
-    ax_ts.set_title("Weekly Price Evolution by Brand (selected pattern set)", fontsize=11, fontweight="bold")
-    _add_subplot_note(ax_ts, "X-axis shows ISO week numbers. Up to last 60 weekly observations are displayed.")
+    ax_ts.set_title("Weekly Price Evolution by Brand", fontsize=11, fontweight="bold")
     ax_ts.set_ylabel("Median Price (PLN)")
     ax_ts.yaxis.set_major_locator(MaxNLocator(nbins=7))
     ax_ts.grid(axis="y", alpha=0.30)
     ax_ts.legend(frameon=False, ncol=3, fontsize=8, loc="best")
 
 
-
-def _kpi_card(ax, title: str, value: str, delta: str | None, tone: str = "neutral") -> None:
+def _kpi_card(
+    ax, title: str, value: str, delta: str | None, tone: str = "neutral"
+) -> None:
     tones = {
         "good": "#166534",
         "bad": "#991B1B",
@@ -798,12 +1024,29 @@ def _kpi_card(ax, title: str, value: str, delta: str | None, tone: str = "neutra
     ax.axis("off")
     ax.set_facecolor("#F9FAFB")
     ax.text(0.02, 0.78, title, fontsize=9, color="#4B5563", transform=ax.transAxes)
-    ax.text(0.02, 0.35, value, fontsize=18, fontweight="bold", color="#111827", transform=ax.transAxes)
+    ax.text(
+        0.02,
+        0.35,
+        value,
+        fontsize=18,
+        fontweight="bold",
+        color="#111827",
+        transform=ax.transAxes,
+    )
     if delta:
-        ax.text(0.02, 0.1, delta, fontsize=10, color=tones.get(tone, "#1F2937"), transform=ax.transAxes)
+        ax.text(
+            0.02,
+            0.1,
+            delta,
+            fontsize=10,
+            color=tones.get(tone, "#1F2937"),
+            transform=ax.transAxes,
+        )
 
 
-def _pivot_heatmap(ax, df: pd.DataFrame, value_col: str, title: str, fmt: str = "{:.1f}") -> None:
+def _pivot_heatmap(
+    ax, df: pd.DataFrame, value_col: str, title: str, fmt: str = "{:.1f}"
+) -> None:
     if df.empty:
         ax.axis("off")
         ax.set_title(f"{title}\n(no data)")
@@ -811,13 +1054,21 @@ def _pivot_heatmap(ax, df: pd.DataFrame, value_col: str, title: str, fmt: str = 
 
     work = df.copy()
     work["snapshot_date"] = pd.to_datetime(work["snapshot_date"], errors="coerce")
-    key_col = "analysis_fitment_key" if "analysis_fitment_key" in work.columns else "rim_group"
+    key_col = (
+        "analysis_fitment_key"
+        if "analysis_fitment_key" in work.columns
+        else "rim_group"
+    )
     rows_order = ["<=13", "14-16", "17", "18", "19+", "ALL"]
     work[key_col] = work[key_col].astype("string")
     if work[key_col].isin(rows_order).any():
-        work[key_col] = pd.Categorical(work[key_col], categories=rows_order, ordered=True)
+        work[key_col] = pd.Categorical(
+            work[key_col], categories=rows_order, ordered=True
+        )
     pivot = (
-        work.pivot_table(index=key_col, columns="snapshot_date", values=value_col, aggfunc="mean")
+        work.pivot_table(
+            index=key_col, columns="snapshot_date", values=value_col, aggfunc="mean"
+        )
         .sort_index()
         .dropna(how="all")
     )
@@ -832,13 +1083,26 @@ def _pivot_heatmap(ax, df: pd.DataFrame, value_col: str, title: str, fmt: str = 
     ax.set_yticks(np.arange(len(pivot.index)))
     ax.set_yticklabels([str(x) for x in pivot.index], fontsize=8)
     ax.set_xticks(np.arange(len(pivot.columns)))
-    ax.set_xticklabels([pd.Timestamp(x).strftime("%d-%b") for x in pivot.columns], rotation=0, ha="center", fontsize=8)
+    ax.set_xticklabels(
+        [pd.Timestamp(x).strftime("%d-%b") for x in pivot.columns],
+        rotation=0,
+        ha="center",
+        fontsize=8,
+    )
 
     for i in range(values.shape[0]):
         for j in range(values.shape[1]):
             if np.isnan(values[i, j]):
                 continue
-            ax.text(j, i, fmt.format(values[i, j]), ha="center", va="center", fontsize=7, color="#111827")
+            ax.text(
+                j,
+                i,
+                fmt.format(values[i, j]),
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#111827",
+            )
 
     ax.figure.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
 
@@ -904,20 +1168,30 @@ def _focused_segment_groups(max_groups: int = 10) -> list[str]:
     return out[:max_groups]
 
 
-def _build_key_fitment_table(silver: pd.DataFrame, latest: pd.Timestamp, prev: pd.Timestamp | None) -> pd.DataFrame:
+def _build_key_fitment_table(
+    silver: pd.DataFrame, latest: pd.Timestamp, prev: pd.Timestamp | None
+) -> pd.DataFrame:
     silver = silver.copy()
     silver["snapshot_date"] = pd.to_datetime(silver["snapshot_date"], errors="coerce")
-    silver["stock_qty"] = pd.to_numeric(silver.get("stock_qty"), errors="coerce").fillna(0)
+    silver["stock_qty"] = pd.to_numeric(
+        silver.get("stock_qty"), errors="coerce"
+    ).fillna(0)
     silver["price_pln"] = pd.to_numeric(silver["price_pln"], errors="coerce")
 
-    latest_df = silver[(silver["snapshot_date"] == latest) & (silver["brand"].isin(FOCUS_BRANDS))].copy()
+    latest_df = silver[
+        (silver["snapshot_date"] == latest) & (silver["brand"].isin(FOCUS_BRANDS))
+    ].copy()
     if latest_df.empty:
         return pd.DataFrame()
 
     group_cols = ["brand", "pattern_family", "size_norm"]
     latest_agg = (
         latest_df.groupby(group_cols, dropna=False)
-        .agg(stock_qty=("stock_qty", "sum"), rows=("product_code", "count"), median_price=("price_pln", "median"))
+        .agg(
+            stock_qty=("stock_qty", "sum"),
+            rows=("product_code", "count"),
+            median_price=("price_pln", "median"),
+        )
         .reset_index()
     )
 
@@ -927,14 +1201,21 @@ def _build_key_fitment_table(silver: pd.DataFrame, latest: pd.Timestamp, prev: p
         .reset_index()
         .sort_values("stock_qty", ascending=False)
     )
-    top_seller = seller_rank.drop_duplicates(group_cols, keep="first")[group_cols + ["seller_norm"]]
+    top_seller = seller_rank.drop_duplicates(group_cols, keep="first")[
+        group_cols + ["seller_norm"]
+    ]
     latest_agg = latest_agg.merge(top_seller, on=group_cols, how="left")
 
     if prev is not None:
-        prev_df = silver[(silver["snapshot_date"] == prev) & (silver["brand"].isin(FOCUS_BRANDS))].copy()
+        prev_df = silver[
+            (silver["snapshot_date"] == prev) & (silver["brand"].isin(FOCUS_BRANDS))
+        ].copy()
         prev_agg = (
             prev_df.groupby(group_cols, dropna=False)
-            .agg(prev_median_price=("price_pln", "median"), prev_rows=("product_code", "count"))
+            .agg(
+                prev_median_price=("price_pln", "median"),
+                prev_rows=("product_code", "count"),
+            )
             .reset_index()
         )
         latest_agg = latest_agg.merge(prev_agg, on=group_cols, how="left")
@@ -942,16 +1223,22 @@ def _build_key_fitment_table(silver: pd.DataFrame, latest: pd.Timestamp, prev: p
         latest_agg["prev_median_price"] = np.nan
         latest_agg["prev_rows"] = np.nan
 
-    latest_agg["wow_price_delta"] = latest_agg["median_price"] - latest_agg["prev_median_price"]
+    latest_agg["wow_price_delta"] = (
+        latest_agg["median_price"] - latest_agg["prev_median_price"]
+    )
     latest_agg["wow_rows_delta"] = latest_agg["rows"] - latest_agg["prev_rows"]
 
     top_by_brand = (
-        latest_agg.sort_values(["brand", "stock_qty"], ascending=[True, False]).groupby("brand", as_index=False).head(5)
+        latest_agg.sort_values(["brand", "stock_qty"], ascending=[True, False])
+        .groupby("brand", as_index=False)
+        .head(5)
     )
     return top_by_brand.sort_values(["brand", "stock_qty"], ascending=[True, False])
 
 
-def build_excel_report(logger: logging.Logger, gold_dir: Path = GOLD_DIR, report_dir: Path = REPORT_DIR) -> Path:
+def build_excel_report(
+    logger: logging.Logger, gold_dir: Path = GOLD_DIR, report_dir: Path = REPORT_DIR
+) -> Path:
     report_dir.mkdir(parents=True, exist_ok=True)
 
     market = _read_gold(gold_dir, "gold_market_weekly.csv")
@@ -984,7 +1271,11 @@ def build_excel_report(logger: logging.Logger, gold_dir: Path = GOLD_DIR, report
         fitment.to_csv(fallback_dir / "Fitment.csv", index=False)
         seller.to_csv(fallback_dir / "Sellers.csv", index=False)
         segment.to_csv(fallback_dir / "Rim_Segments.csv", index=False)
-        logger.warning("Excel generation failed (%s). Wrote CSV report bundle at %s", exc, fallback_dir)
+        logger.warning(
+            "Excel generation failed (%s). Wrote CSV report bundle at %s",
+            exc,
+            fallback_dir,
+        )
         return fallback_dir
 
 
@@ -1038,21 +1329,33 @@ def build_pdf_report(
         page_no = 1
         mapping = load_canonical_mapping()
         keyfit_by_group: dict[str, str] = {}
-        if not mapping.empty and "segment_reference_group" in mapping.columns and "key_fitments" in mapping.columns:
+        if (
+            not mapping.empty
+            and "segment_reference_group" in mapping.columns
+            and "key_fitments" in mapping.columns
+        ):
             tmp = (
                 mapping[["segment_reference_group", "key_fitments"]]
                 .astype("string")
                 .fillna("")
                 .assign(
-                    segment_reference_group=lambda d: d["segment_reference_group"].str.strip(),
+                    segment_reference_group=lambda d: d[
+                        "segment_reference_group"
+                    ].str.strip(),
                     key_fitments=lambda d: d["key_fitments"].str.strip(),
                 )
             )
-            tmp = tmp[(tmp["segment_reference_group"] != "") & (tmp["key_fitments"] != "")]
+            tmp = tmp[
+                (tmp["segment_reference_group"] != "") & (tmp["key_fitments"] != "")
+            ]
             for g, grp in tmp.groupby("segment_reference_group", dropna=False):
-                keyfit_by_group[str(g)] = str(grp["key_fitments"].mode().iloc[0]) if not grp.empty else "-"
+                keyfit_by_group[str(g)] = (
+                    str(grp["key_fitments"].mode().iloc[0]) if not grp.empty else "-"
+                )
 
-        def _save_page(fig, lines: list[str] | None = None, add_footer: bool = True) -> None:
+        def _save_page(
+            fig, lines: list[str] | None = None, add_footer: bool = True
+        ) -> None:
             nonlocal page_no
             if add_footer and lines:
                 _add_page_footer(fig, page_no=page_no, lines=lines)
@@ -1067,13 +1370,17 @@ def build_pdf_report(
 
         # Page 2: Positioning across lines (Supersport, Sport Touring Radial).
         fig = plt.figure(figsize=(16, 9))
-        _draw_positioning_across_lines_page(fig, silver=silver, latest=latest, logos_dir=logos_dir)
+        _draw_positioning_across_lines_page(
+            fig, silver=silver, latest=latest, logos_dir=logos_dir
+        )
         _save_page(fig, add_footer=False)
 
         focused_groups = _focused_segment_groups(max_groups=10)
         primary_group = "706 - SUPERSPORT 1st"
         if primary_group not in focused_groups:
-            primary_group = focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
+            primary_group = (
+                focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
+            )
 
         # Page 3: Segment-level checkpoint (first focused group, default Supersport 1st)
         fig = plt.figure(figsize=(16, 9))
@@ -1084,10 +1391,18 @@ def build_pdf_report(
             prev=prev,
             segment_reference_group=primary_group,
         )
-        _save_page(fig, lines=_segment_footer_lines(primary_group, keyfit_by_group.get(primary_group, "-")), add_footer=True)
+        _save_page(
+            fig,
+            lines=_segment_footer_lines(
+                primary_group, keyfit_by_group.get(primary_group, "-")
+            ),
+            add_footer=True,
+        )
 
         if primary_group not in focused_groups:
-            primary_group = focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
+            primary_group = (
+                focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
+            )
 
         # Page 4..12: Remaining focused segment groups in same template as page 3.
         remaining_groups = [g for g in focused_groups if g != primary_group][:9]
@@ -1100,7 +1415,11 @@ def build_pdf_report(
                 prev=prev,
                 segment_reference_group=group,
             )
-            _save_page(fig, lines=_segment_footer_lines(group, keyfit_by_group.get(group, "-")), add_footer=True)
+            _save_page(
+                fig,
+                lines=_segment_footer_lines(group, keyfit_by_group.get(group, "-")),
+                add_footer=True,
+            )
 
     logger.info("PDF report written: %s", output)
     return output
