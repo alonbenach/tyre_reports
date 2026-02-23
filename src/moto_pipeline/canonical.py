@@ -163,6 +163,46 @@ def build_canonical_reference() -> tuple[pd.DataFrame, CampaignContext]:
     return ref, campaign
 
 
+
+
+def assert_high_confidence_token_integrity(df: pd.DataFrame, sample_size: int = 12) -> None:
+    if df.empty:
+        return
+    required = {"is_high_confidence_match", "pattern_set", "name_norm"}
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing columns for token integrity check: {missing}")
+
+    work = df[df["is_high_confidence_match"].fillna(False)].copy()
+    if work.empty:
+        return
+
+    work["_pattern_norm"] = work["pattern_set"].map(_norm_text)
+    work["_name_norm"] = work["name_norm"].map(_norm_text)
+    if "pattern_family" in work.columns:
+        work["_family_norm"] = work["pattern_family"].map(_norm_text)
+    else:
+        work["_family_norm"] = ""
+
+    work["_token_ok"] = work.apply(
+        lambda r: (
+            _all_tokens_present(str(r["_name_norm"]), str(r["_pattern_norm"]))
+            or _all_tokens_present(str(r["_family_norm"]), str(r["_pattern_norm"]))
+        ),
+        axis=1,
+    )
+    work["_token_ok"] = work["_token_ok"].astype(bool)
+    bad = work[work["_token_ok"].eq(False)].copy()
+    if bad.empty:
+        return
+
+    cols = [c for c in ["snapshot_date", "brand", "product_code", "size_norm", "name_norm", "pattern_set", "match_method"] if c in bad.columns]
+    sample = bad[cols].head(sample_size).to_dict("records")
+    raise ValueError(
+        "High-confidence canonical matches failed full-token integrity check. "
+        f"rows={len(bad)} sample={sample}"
+    )
+
 def match_to_canonical(oponeo_df: pd.DataFrame, canonical_ref: pd.DataFrame) -> pd.DataFrame:
     if oponeo_df.empty:
         return oponeo_df.copy()
