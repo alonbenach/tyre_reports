@@ -545,10 +545,10 @@ def _draw_segment_pattern_checkpoint_page(
         if pd.isna(v):
             return "-"
         if float(v) > 0.05:
-            return f"? {float(v):+.1f}%"
+            return f"↑ {float(v):+.1f}%"
         if float(v) < -0.05:
-            return f"? {float(v):+.1f}%"
-        return f"? {float(v):+.1f}%"
+            return f"↓ {float(v):+.1f}%"
+        return f"→ {float(v):+.1f}%"
 
     table, series_df = _build_segment_pattern_checkpoint(
         silver=silver,
