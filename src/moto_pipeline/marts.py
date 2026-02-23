@@ -11,6 +11,14 @@ from .settings import FOCUS_BRANDS, GOLD_DIR, RECAP_BRANDS, TOP_COMPETITORS
 
 
 def _load_silver(silver_file: Path) -> pd.DataFrame:
+    """Load silver dataset from parquet with CSV fallback.
+
+    Args:
+        silver_file: Path to silver parquet or csv.
+
+    Returns:
+        Loaded silver dataframe.
+    """
     if silver_file.suffix == ".parquet":
         try:
             return pd.read_parquet(silver_file)
@@ -28,6 +36,16 @@ def _load_silver(silver_file: Path) -> pd.DataFrame:
 
 
 def _attach_week_offsets(df: pd.DataFrame, value_col: str, keys: list[str]) -> pd.DataFrame:
+    """Attach previous-week and previous-year deltas for a measure.
+
+    Args:
+        df: Input dataframe containing ``snapshot_date``.
+        value_col: Measure column to compare over time.
+        keys: Grouping keys defining each time series.
+
+    Returns:
+        Dataframe with WoW/YoY offset columns.
+    """
     base = df.copy()
     base["snapshot_date"] = pd.to_datetime(base["snapshot_date"], errors="coerce")
     iso = base["snapshot_date"].dt.isocalendar()
@@ -48,6 +66,14 @@ def _attach_week_offsets(df: pd.DataFrame, value_col: str, keys: list[str]) -> p
 
 
 def _analysis_fitment_key(df: pd.DataFrame) -> pd.Series:
+    """Build reporting fitment key prioritizing canonical key-fitments.
+
+    Args:
+        df: Input dataframe containing ``key_fitments`` and ``size_root``.
+
+    Returns:
+        Fitment key series.
+    """
     key_fit = df["key_fitments"].astype("string").fillna("").str.strip()
     size_root = df["size_root"].astype("string").fillna("").str.strip()
     out = pd.Series("UNMAPPED", index=df.index, dtype="string")
@@ -57,6 +83,14 @@ def _analysis_fitment_key(df: pd.DataFrame) -> pd.Series:
 
 
 def _price_positioning(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute weekly price positioning metrics vs competitor set and market.
+
+    Args:
+        df: High-confidence matched dataset for focus brands.
+
+    Returns:
+        Positioning dataframe for overall and fitment granularity.
+    """
     group_cols = ["snapshot_date", "analysis_fitment_key"]
     per_brand = (
         df.groupby(group_cols + ["brand"], dropna=False)
@@ -118,6 +152,14 @@ def _price_positioning(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _match_quality(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize canonical mapping quality by week and method.
+
+    Args:
+        df: Input dataset with mapping quality flags.
+
+    Returns:
+        Match-quality summary dataframe.
+    """
     summary = (
         df.groupby(["snapshot_date"], dropna=False)
         .agg(
@@ -139,6 +181,14 @@ def _match_quality(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _keyfitment_checkpoint(df: pd.DataFrame) -> pd.DataFrame:
+    """Build key-fitment checkpoint mart for pattern/size monitoring.
+
+    Args:
+        df: High-confidence matched dataset.
+
+    Returns:
+        Aggregated checkpoint dataframe.
+    """
     scoped = df[df["is_high_confidence_match"] & df["brand"].isin(FOCUS_BRANDS)].copy()
     if scoped.empty:
         return scoped
@@ -170,6 +220,14 @@ def _keyfitment_checkpoint(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _recap_by_brand_weighted_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Build page-1 recap index weighted by Pirelli segment footprint.
+
+    Args:
+        df: Matched silver dataset.
+
+    Returns:
+        Weekly recap dataframe by brand.
+    """
     scoped = df[
         df["is_high_confidence_match"].fillna(False)
         & df["brand"].isin(RECAP_BRANDS)
@@ -254,6 +312,16 @@ def _recap_by_brand_weighted_index(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_gold_marts(logger: logging.Logger, silver_file: Path, gold_dir: Path = GOLD_DIR) -> list[Path]:
+    """Generate all gold marts from silver dataset.
+
+    Args:
+        logger: Pipeline logger.
+        silver_file: Path to silver dataset.
+        gold_dir: Gold output directory.
+
+    Returns:
+        List of written mart file paths.
+    """
     gold_dir.mkdir(parents=True, exist_ok=True)
     df = _load_silver(silver_file)
     df["snapshot_date"] = pd.to_datetime(df["snapshot_date"], errors="coerce")

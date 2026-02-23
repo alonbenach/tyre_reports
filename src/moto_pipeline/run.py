@@ -12,6 +12,14 @@ from .transform import build_motorcycle_silver
 
 
 def build_logger() -> logging.Logger:
+    """Create standard pipeline logger.
+
+    Args:
+        None.
+
+    Returns:
+        Configured logger instance.
+    """
     logger = logging.getLogger("moto_pipeline")
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
@@ -21,6 +29,14 @@ def build_logger() -> logging.Logger:
 
 
 def run_pipeline(skip_pdf: bool = False) -> None:
+    """Run full weekly pipeline from ingest to report generation.
+
+    Args:
+        skip_pdf: If True, skip PDF report generation.
+
+    Returns:
+        None.
+    """
     logger = build_logger()
     logger.info("Starting weekly moto report pipeline")
     logger.info("Data dir: %s", DATA_DIR)
@@ -36,16 +52,31 @@ def run_pipeline(skip_pdf: bool = False) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments.
+
+    Args:
+        None.
+
+    Returns:
+        Parsed CLI namespace.
+    """
     parser = argparse.ArgumentParser(description="Run weekly motorcycle report pipeline.")
     parser.add_argument("--skip-pdf", action="store_true", help="Build Excel only.")
     return parser.parse_args()
 
 
 def main() -> None:
+    """CLI entrypoint for weekly pipeline run.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
     args = parse_args()
     run_pipeline(skip_pdf=args.skip_pdf)
 
 
 if __name__ == "__main__":
     main()
-

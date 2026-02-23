@@ -12,6 +12,14 @@ from .settings import CAMPAIGN_FILE, MAPPING_FILE, PRICE_LIST_FILE
 
 
 def _norm_text(value: object) -> str:
+    """Normalize free text for robust canonical matching.
+
+    Args:
+        value: Raw text-like value.
+
+    Returns:
+        Uppercased, punctuation-normalized token string.
+    """
     text = "" if value is None else str(value)
     text = text.upper()
     # Normalize punctuation first.
@@ -24,12 +32,30 @@ def _norm_text(value: object) -> str:
 
 
 def _contains_phrase(text: str, phrase: str) -> int:
+    """Return 1 when phrase exists as a full-token sequence in text.
+
+    Args:
+        text: Candidate text.
+        phrase: Phrase to search.
+
+    Returns:
+        1 if present, else 0.
+    """
     if not text or not phrase:
         return 0
     return 1 if re.search(rf"\b{re.escape(phrase)}\b", text) else 0
 
 
 def _all_tokens_present(text: str, pattern: str) -> int:
+    """Return 1 when every token from pattern exists in text.
+
+    Args:
+        text: Candidate text.
+        pattern: Canonical pattern text.
+
+    Returns:
+        1 if all pattern tokens are present, else 0.
+    """
     text_tokens = set((text or "").split())
     pattern_tokens = [t for t in (pattern or "").split() if t]
     if not pattern_tokens:
@@ -38,6 +64,14 @@ def _all_tokens_present(text: str, pattern: str) -> int:
 
 
 def extract_size_root(value: object) -> str:
+    """Extract normalized size root token (e.g. ``120/70 17``).
+
+    Args:
+        value: Source size text.
+
+    Returns:
+        Extracted size root or empty string.
+    """
     text = _norm_text(value).replace("ZR", "R").replace(" ZR ", " R ")
     m = re.search(r"(\d{2,3})\s*/?\s*(\d{2,3})\s*[-R]?\s*(\d{2})", text)
     if not m:
@@ -46,11 +80,27 @@ def extract_size_root(value: object) -> str:
 
 
 def normalize_brand(value: object) -> str:
+    """Normalize brand text to title case token format.
+
+    Args:
+        value: Source brand text.
+
+    Returns:
+        Normalized brand string.
+    """
     text = _norm_text(value).title()
     return text
 
 
 def _read_campaign_customer_allin(campaign_file: Path = CAMPAIGN_FILE) -> float:
+    """Read Oponeo all-in discount from campaign file.
+
+    Args:
+        campaign_file: Campaign workbook path.
+
+    Returns:
+        All-in discount ratio for Oponeo.
+    """
     raw = pd.read_excel(campaign_file, sheet_name="rebate scheme", header=1)
     renamed = raw.rename(columns={raw.columns[0]: "customer", raw.columns[2]: "all_in_discount"})
     renamed["customer"] = renamed["customer"].astype("string")
@@ -61,6 +111,14 @@ def _read_campaign_customer_allin(campaign_file: Path = CAMPAIGN_FILE) -> float:
 
 
 def _read_campaign_pattern_extras(campaign_file: Path = CAMPAIGN_FILE) -> pd.DataFrame:
+    """Read extra discount rules by canonical pattern set.
+
+    Args:
+        campaign_file: Campaign workbook path.
+
+    Returns:
+        Dataframe with normalized pattern set and extra discount.
+    """
     raw = pd.read_excel(campaign_file, sheet_name="rebate scheme", header=1)
     c0, c1, c2 = raw.columns[:3]
     marker = raw[c0].astype("string").str.upper().str.contains("ADDITIONAL DISCOUNT FOR PATTERN SETS", na=False)
@@ -78,6 +136,14 @@ def _read_campaign_pattern_extras(campaign_file: Path = CAMPAIGN_FILE) -> pd.Dat
 
 
 def load_canonical_mapping(mapping_file: Path = MAPPING_FILE) -> pd.DataFrame:
+    """Load and normalize canonical mapping table.
+
+    Args:
+        mapping_file: Canonical mapping workbook path.
+
+    Returns:
+        Canonical mapping dataframe.
+    """
     mapping = pd.read_excel(mapping_file, sheet_name="mapping")
     mapping = mapping.rename(
         columns={
@@ -99,6 +165,14 @@ def load_canonical_mapping(mapping_file: Path = MAPPING_FILE) -> pd.DataFrame:
 
 
 def load_price_list(price_list_file: Path = PRICE_LIST_FILE) -> pd.DataFrame:
+    """Load and normalize official listing price table.
+
+    Args:
+        price_list_file: Price list workbook path.
+
+    Returns:
+        Price list dataframe with normalized keys.
+    """
     pl = pd.read_excel(price_list_file, sheet_name="listing price")
     pl = pl.rename(
         columns={
@@ -126,6 +200,14 @@ class CampaignContext:
 
 
 def load_campaign_context(campaign_file: Path = CAMPAIGN_FILE) -> CampaignContext:
+    """Load campaign-level discount context.
+
+    Args:
+        campaign_file: Campaign workbook path.
+
+    Returns:
+        Campaign context dataclass.
+    """
     return CampaignContext(
         oponeo_all_in_discount=_read_campaign_customer_allin(campaign_file),
         pattern_extras=_read_campaign_pattern_extras(campaign_file),
@@ -133,6 +215,14 @@ def load_campaign_context(campaign_file: Path = CAMPAIGN_FILE) -> CampaignContex
 
 
 def build_canonical_reference() -> tuple[pd.DataFrame, CampaignContext]:
+    """Build canonical reference by combining mapping, price list and campaign.
+
+    Args:
+        None.
+
+    Returns:
+        Tuple of enriched canonical reference dataframe and campaign context.
+    """
     mapping = load_canonical_mapping()
     price_list = load_price_list()
     campaign = load_campaign_context()
@@ -170,6 +260,15 @@ def build_canonical_reference() -> tuple[pd.DataFrame, CampaignContext]:
 
 
 def assert_high_confidence_token_integrity(df: pd.DataFrame, sample_size: int = 12) -> None:
+    """Validate that high-confidence matches satisfy full-token agreement.
+
+    Args:
+        df: Matched dataset to validate.
+        sample_size: Number of failing sample rows to include in error text.
+
+    Returns:
+        None. Raises ``ValueError`` on integrity violations.
+    """
     if df.empty:
         return
     required = {"is_high_confidence_match", "pattern_set", "name_norm"}
@@ -208,6 +307,15 @@ def assert_high_confidence_token_integrity(df: pd.DataFrame, sample_size: int = 
     )
 
 def match_to_canonical(oponeo_df: pd.DataFrame, canonical_ref: pd.DataFrame) -> pd.DataFrame:
+    """Match Oponeo rows to canonical patterns using strict token-safe scoring.
+
+    Args:
+        oponeo_df: Input dataset from raw/silver transform step.
+        canonical_ref: Enriched canonical reference dataframe.
+
+    Returns:
+        Matched dataframe with canonical fields and match diagnostics.
+    """
     if oponeo_df.empty:
         return oponeo_df.copy()
 

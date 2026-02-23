@@ -26,6 +26,15 @@ BRAND_COLORS = {
 
 
 def _read_gold(gold_dir: Path, filename: str) -> pd.DataFrame:
+    """Read a gold mart CSV file.
+
+    Args:
+        gold_dir: Gold directory path.
+        filename: Gold filename.
+
+    Returns:
+        Loaded dataframe.
+    """
     path = gold_dir / filename
     if not path.exists():
         raise FileNotFoundError(f"Expected mart file not found: {path}")
@@ -33,6 +42,14 @@ def _read_gold(gold_dir: Path, filename: str) -> pd.DataFrame:
 
 
 def _read_recap_latest(gold_dir: Path) -> pd.DataFrame:
+    """Load latest recap-by-brand records with display fields.
+
+    Args:
+        gold_dir: Gold directory path.
+
+    Returns:
+        Latest recap dataframe.
+    """
     latest_path = gold_dir / "gold_recap_by_brand_latest.csv"
     if latest_path.exists():
         return pd.read_csv(latest_path)
@@ -64,6 +81,14 @@ def _read_recap_latest(gold_dir: Path) -> pd.DataFrame:
 
 
 def _read_silver(silver_dir: Path) -> pd.DataFrame:
+    """Read silver dataset from parquet with CSV fallback.
+
+    Args:
+        silver_dir: Silver directory path.
+
+    Returns:
+        Loaded silver dataframe.
+    """
     parquet = silver_dir / "motorcycle_weekly.parquet"
     csv_file = silver_dir / "motorcycle_weekly.csv"
     if parquet.exists():
@@ -79,6 +104,15 @@ def _read_silver(silver_dir: Path) -> pd.DataFrame:
 
 
 def _latest_snapshot(df: pd.DataFrame, date_col: str = "snapshot_date") -> str:
+    """Return latest valid snapshot date as ``YYYY-MM-DD``.
+
+    Args:
+        df: Input dataframe.
+        date_col: Date column name.
+
+    Returns:
+        Latest snapshot date string.
+    """
     latest = pd.to_datetime(df[date_col], errors="coerce").max()
     if pd.isna(latest):
         raise ValueError("No valid snapshot date found in marts.")
@@ -86,6 +120,14 @@ def _latest_snapshot(df: pd.DataFrame, date_col: str = "snapshot_date") -> str:
 
 
 def _week_label(date_str: str) -> str:
+    """Convert date into ISO week label.
+
+    Args:
+        date_str: Date string.
+
+    Returns:
+        Week label in ``Wxx`` format.
+    """
     dt = pd.to_datetime(date_str, errors="coerce")
     if pd.isna(dt):
         return "W00"
@@ -95,6 +137,14 @@ def _week_label(date_str: str) -> str:
 def _safe_prev_date(
     series: pd.Series,
 ) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    """Return latest and previous timestamps from a date series.
+
+    Args:
+        series: Date-like series.
+
+    Returns:
+        Tuple of (latest, previous) timestamps.
+    """
     values = sorted(pd.to_datetime(series, errors="coerce").dropna().unique())
     if not values:
         return None, None
@@ -150,10 +200,20 @@ def _add_logo_or_label(
 
 
 def _decorate_page(
-        fig, 
-        title: str, 
+        fig,
+        title: str,
         subtitle: str | None = None,
         ) -> None:
+    """Apply common page title layout.
+
+    Args:
+        fig: Matplotlib figure.
+        title: Page title.
+        subtitle: Optional subtitle.
+
+    Returns:
+        None.
+    """
     fig.subplots_adjust(top=0.84, bottom=0.07, left=0.05, right=0.98)
     if subtitle:
         fig.suptitle(title, fontsize=17, fontweight="bold", x=0.03, y=0.975, ha="left")
@@ -163,6 +223,16 @@ def _decorate_page(
 
 
 def _add_page_footer(fig, page_no: int, lines: list[str]) -> None:
+    """Draw metadata footer box and page number.
+
+    Args:
+        fig: Matplotlib figure.
+        page_no: 1-based page number.
+        lines: Footer text lines.
+
+    Returns:
+        None.
+    """
     from matplotlib.patches import Rectangle
 
     # Draw on an overlay axis so content coordinates do not interfere with page plots.
@@ -207,6 +277,15 @@ def _add_page_footer(fig, page_no: int, lines: list[str]) -> None:
 
 
 def _segment_footer_lines(segment_reference_group: str, key_fitments: str) -> list[str]:
+    """Build standardized footer text for segment-focused pages.
+
+    Args:
+        segment_reference_group: Canonical segment label.
+        key_fitments: Canonical key-fitments text.
+
+    Returns:
+        Footer lines list.
+    """
     seg = str(segment_reference_group or "").strip()
     if " - " in seg:
         seg = seg.split(" - ", 1)[1].strip()
@@ -227,6 +306,15 @@ def _segment_footer_lines(segment_reference_group: str, key_fitments: str) -> li
 
 
 def _format_date_axis(ax, max_ticks: int = 6) -> None:
+    """Format date axis with concise labels.
+
+    Args:
+        ax: Matplotlib axis.
+        max_ticks: Maximum major ticks.
+
+    Returns:
+        None.
+    """
     import matplotlib.dates as mdates
 
     locator = mdates.AutoDateLocator(minticks=2, maxticks=max_ticks)
@@ -442,6 +530,16 @@ def _draw_recap_matrix_page(
 def _build_positioning_across_lines_latest(
     silver: pd.DataFrame, latest: pd.Timestamp, brands: list[str] | None = None
 ) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """Prepare latest line-level price/index matrices for page 2.
+
+    Args:
+        silver: Silver dataset.
+        latest: Latest snapshot date.
+        brands: Brand order for columns.
+
+    Returns:
+        Tuple of (segment tables, ordered brands).
+    """
     if brands is None:
         brands = list(RECAP_BRANDS)
 
@@ -504,6 +602,17 @@ def _build_positioning_across_lines_latest(
 def _draw_positioning_across_lines_page(
     fig, silver: pd.DataFrame, latest: pd.Timestamp, logos_dir: Path = LOGOS_DIR
 ) -> None:
+    """Render page 2 line-level positioning layout.
+
+    Args:
+        fig: Matplotlib figure.
+        silver: Silver dataset.
+        latest: Latest snapshot date.
+        logos_dir: Logo assets directory.
+
+    Returns:
+        None.
+    """
     from matplotlib.gridspec import GridSpec
 
     def _fmt_price(v: float) -> str:
@@ -623,6 +732,18 @@ def _build_segment_pattern_checkpoint(
     prev: pd.Timestamp | None,
     brands: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build segment-focused table metrics and weekly series.
+
+    Args:
+        silver: Silver dataset.
+        segment_reference_group: Target canonical segment group.
+        latest: Latest snapshot date.
+        prev: Previous snapshot date.
+        brands: Brand order.
+
+    Returns:
+        Tuple of (table dataframe, series dataframe).
+    """
     if brands is None:
         brands = list(RECAP_BRANDS)
 
@@ -772,6 +893,18 @@ def _draw_segment_pattern_checkpoint_page(
     prev: pd.Timestamp | None,
     segment_reference_group: str,
 ) -> None:
+    """Render one segment-focused page (table + weekly trend chart).
+
+    Args:
+        fig: Matplotlib figure.
+        silver: Silver dataset.
+        latest: Latest snapshot date.
+        prev: Previous snapshot date.
+        segment_reference_group: Target segment group.
+
+    Returns:
+        None.
+    """
     import matplotlib.pyplot as plt
     from matplotlib.gridspec import GridSpec
     from matplotlib.patches import FancyBboxPatch
@@ -1171,6 +1304,16 @@ def _focused_segment_groups(max_groups: int = 10) -> list[str]:
 def _build_key_fitment_table(
     silver: pd.DataFrame, latest: pd.Timestamp, prev: pd.Timestamp | None
 ) -> pd.DataFrame:
+    """Build key-fitment checkpoint table used in legacy report pages.
+
+    Args:
+        silver: Silver dataset.
+        latest: Latest snapshot date.
+        prev: Previous snapshot date.
+
+    Returns:
+        Aggregated key-fitment dataframe.
+    """
     silver = silver.copy()
     silver["snapshot_date"] = pd.to_datetime(silver["snapshot_date"], errors="coerce")
     silver["stock_qty"] = pd.to_numeric(
@@ -1239,6 +1382,16 @@ def _build_key_fitment_table(
 def build_excel_report(
     logger: logging.Logger, gold_dir: Path = GOLD_DIR, report_dir: Path = REPORT_DIR
 ) -> Path:
+    """Generate Excel report workbook from gold marts.
+
+    Args:
+        logger: Pipeline logger.
+        gold_dir: Gold input directory.
+        report_dir: Output directory.
+
+    Returns:
+        Path to generated workbook (or fallback CSV bundle path).
+    """
     report_dir.mkdir(parents=True, exist_ok=True)
 
     market = _read_gold(gold_dir, "gold_market_weekly.csv")
@@ -1286,6 +1439,18 @@ def build_pdf_report(
     silver_dir: Path = SILVER_DIR,
     logos_dir: Path = LOGOS_DIR,
 ) -> Path | None:
+    """Generate multi-page PDF report.
+
+    Args:
+        logger: Pipeline logger.
+        gold_dir: Gold input directory.
+        report_dir: Output directory.
+        silver_dir: Silver input directory.
+        logos_dir: Brand logo directory.
+
+    Returns:
+        Path to generated PDF, or ``None`` if matplotlib is unavailable.
+    """
     try:
         import matplotlib.pyplot as plt
         from matplotlib.backends.backend_pdf import PdfPages
@@ -1398,11 +1563,6 @@ def build_pdf_report(
             ),
             add_footer=True,
         )
-
-        if primary_group not in focused_groups:
-            primary_group = (
-                focused_groups[0] if focused_groups else "706 - SUPERSPORT 1st"
-            )
 
         # Page 4..12: Remaining focused segment groups in same template as page 3.
         remaining_groups = [g for g in focused_groups if g != primary_group][:9]

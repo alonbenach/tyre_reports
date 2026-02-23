@@ -15,6 +15,16 @@ def ingest_all_weekly_csv(
     input_dir: Path = DATA_DIR,
     raw_dir: Path = RAW_DIR,
 ) -> Path:
+    """Copy weekly CSV files into raw snapshot layout and log ingestion metadata.
+
+    Args:
+        logger: Pipeline logger.
+        input_dir: Directory with weekly ``YYYY-MM-DD.csv`` files.
+        raw_dir: Destination raw directory root.
+
+    Returns:
+        Path to generated ingestion log CSV.
+    """
     ensure_dirs([raw_dir])
 
     files = sorted(p for p in input_dir.glob("*.csv") if p.is_file())
@@ -41,4 +51,3 @@ def ingest_all_weekly_csv(
     logger.info("Ingested %s files into %s", len(rows), raw_dir)
     logger.info("Wrote ingestion metadata: %s", log_path)
     return log_path
-

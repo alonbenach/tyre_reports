@@ -11,6 +11,14 @@ from .settings import INPUT_COLUMNS, MOTORCYCLE_TYPE, RAW_DIR, SILVER_DIR
 
 
 def normalize_text(series: pd.Series) -> pd.Series:
+    """Normalize text fields by trimming and collapsing whitespace.
+
+    Args:
+        series: Input text series.
+
+    Returns:
+        Normalized string series.
+    """
     return (
         series.fillna("")
         .astype("string")
@@ -20,6 +28,14 @@ def normalize_text(series: pd.Series) -> pd.Series:
 
 
 def rim_group(rim_value: pd.Series) -> pd.Series:
+    """Bucket rim size into reporting groups.
+
+    Args:
+        rim_value: Rim diameter series.
+
+    Returns:
+        Rim group labels.
+    """
     rim_num = pd.to_numeric(rim_value, errors="coerce")
     out = pd.Series("Unknown", index=rim_value.index, dtype="string")
     out = out.mask(rim_num <= 13, "<=13")
@@ -31,6 +47,14 @@ def rim_group(rim_value: pd.Series) -> pd.Series:
 
 
 def fitment_position(name_col: pd.Series) -> pd.Series:
+    """Infer FRONT/REAR fitment from product name.
+
+    Args:
+        name_col: Product name series.
+
+    Returns:
+        Fitment position labels.
+    """
     name_norm = normalize_text(name_col).str.upper()
     out = pd.Series("Unknown", index=name_col.index, dtype="string")
     out = out.mask(name_norm.str.contains("FRONT", na=False), "Front")
@@ -39,6 +63,14 @@ def fitment_position(name_col: pd.Series) -> pd.Series:
 
 
 def pattern_family(name_col: pd.Series) -> pd.Series:
+    """Build a lightweight pattern-family proxy from the first tokens.
+
+    Args:
+        name_col: Product name series.
+
+    Returns:
+        Pattern-family string series.
+    """
     # Lightweight product line proxy used for checkpoint-style ranking tables.
     name_norm = normalize_text(name_col).str.upper()
     tokens = name_norm.str.split(" ", expand=True).iloc[:, :3].fillna("")
@@ -50,6 +82,16 @@ def build_motorcycle_silver(
     raw_dir: Path = RAW_DIR,
     silver_dir: Path = SILVER_DIR,
 ) -> Path:
+    """Build the motorcycle silver dataset from raw snapshots.
+
+    Args:
+        logger: Pipeline logger.
+        raw_dir: Raw snapshot directory root.
+        silver_dir: Silver output directory.
+
+    Returns:
+        Path to written silver dataset.
+    """
     raw_files = sorted(raw_dir.glob("snapshot_date=*/source.csv"))
     if not raw_files:
         raise FileNotFoundError(f"No raw snapshots found under {raw_dir}")
