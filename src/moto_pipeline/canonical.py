@@ -14,7 +14,11 @@ from .settings import CAMPAIGN_FILE, MAPPING_FILE, PRICE_LIST_FILE
 def _norm_text(value: object) -> str:
     text = "" if value is None else str(value)
     text = text.upper()
+    # Normalize punctuation first.
     text = re.sub(r"[^A-Z0-9 ]+", " ", text)
+    # Make alnum compounds comparable (e.g. GPR300 <-> GPR 300).
+    text = re.sub(r"(?<=[A-Z])(?=\d)", " ", text)
+    text = re.sub(r"(?<=\d)(?=[A-Z])", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
