@@ -93,18 +93,18 @@ def normalize_brand(value: object) -> str:
 
 
 def _read_campaign_customer_allin(campaign_file: Path = CAMPAIGN_FILE) -> float:
-    """Read Oponeo all-in discount from campaign file.
+    """Read all-in discount from campaign file.
 
     Args:
         campaign_file: Campaign workbook path.
 
     Returns:
-        All-in discount ratio for Oponeo.
+        All-in discount ratio for Platforma Opon.
     """
     raw = pd.read_excel(campaign_file, sheet_name="rebate scheme", header=1)
     renamed = raw.rename(columns={raw.columns[0]: "customer", raw.columns[2]: "all_in_discount"})
     renamed["customer"] = renamed["customer"].astype("string")
-    row = renamed[renamed["customer"].str.upper().str.contains("OPONEO", na=False)]
+    row = renamed[renamed["customer"].str.upper().str.contains("Platforma Opon", na=False)]
     if row.empty:
         return 0.0
     return float(pd.to_numeric(row.iloc[0]["all_in_discount"], errors="coerce") or 0.0)
@@ -195,7 +195,7 @@ def load_price_list(price_list_file: Path = PRICE_LIST_FILE) -> pd.DataFrame:
 
 @dataclass
 class CampaignContext:
-    oponeo_all_in_discount: float
+    opon_all_in_discount: float
     pattern_extras: pd.DataFrame
 
 
@@ -209,7 +209,7 @@ def load_campaign_context(campaign_file: Path = CAMPAIGN_FILE) -> CampaignContex
         Campaign context dataclass.
     """
     return CampaignContext(
-        oponeo_all_in_discount=_read_campaign_customer_allin(campaign_file),
+        opon_all_in_discount=_read_campaign_customer_allin(campaign_file),
         pattern_extras=_read_campaign_pattern_extras(campaign_file),
     )
 
@@ -237,8 +237,8 @@ def build_canonical_reference() -> tuple[pd.DataFrame, CampaignContext]:
     ref = ref.merge(campaign.pattern_extras, on="pattern_set_norm", how="left")
     ref["extra_discount"] = pd.to_numeric(ref["extra_discount"], errors="coerce").fillna(0.0)
     ref["is_extra_3pct_set"] = ref["extra_discount"] >= 0.03 - 1e-9
-    ref["oponeo_all_in_discount"] = campaign.oponeo_all_in_discount
-    ref["oponeo_all_in_plus_extra"] = ref["oponeo_all_in_discount"] + ref["extra_discount"]
+    ref["opon_all_in_discount"] = campaign.opon_all_in_discount
+    ref["opon_all_in_plus_extra"] = ref["opon_all_in_discount"] + ref["extra_discount"]
     ref = (
         ref.groupby(
             ["brand", "pattern_set", "pattern_set_norm", "segment_reference_group", "key_fitments", "size_text", "size_root"],
@@ -250,8 +250,8 @@ def build_canonical_reference() -> tuple[pd.DataFrame, CampaignContext]:
             ipcode=("ipcode", "first"),
             extra_discount=("extra_discount", "max"),
             is_extra_3pct_set=("is_extra_3pct_set", "max"),
-            oponeo_all_in_discount=("oponeo_all_in_discount", "max"),
-            oponeo_all_in_plus_extra=("oponeo_all_in_plus_extra", "max"),
+            opon_all_in_discount=("opon_all_in_discount", "max"),
+            opon_all_in_plus_extra=("opon_all_in_plus_extra", "max"),
         )
     )
     return ref, campaign
@@ -306,20 +306,20 @@ def assert_high_confidence_token_integrity(df: pd.DataFrame, sample_size: int = 
         f"rows={len(bad)} sample={sample}"
     )
 
-def match_to_canonical(oponeo_df: pd.DataFrame, canonical_ref: pd.DataFrame) -> pd.DataFrame:
-    """Match Oponeo rows to canonical patterns using strict token-safe scoring.
+def match_to_canonical(opon_df: pd.DataFrame, canonical_ref: pd.DataFrame) -> pd.DataFrame:
+    """Match Platforma Opon rows to canonical patterns using strict token-safe scoring.
 
     Args:
-        oponeo_df: Input dataset from raw/silver transform step.
+        opon_df: Input dataset from raw/silver transform step.
         canonical_ref: Enriched canonical reference dataframe.
 
     Returns:
         Matched dataframe with canonical fields and match diagnostics.
     """
-    if oponeo_df.empty:
-        return oponeo_df.copy()
+    if opon_df.empty:
+        return opon_df.copy()
 
-    df = oponeo_df.copy()
+    df = opon_df.copy()
     ref = canonical_ref.copy()
 
     df["brand"] = df["brand"].map(normalize_brand)
@@ -409,7 +409,7 @@ def match_to_canonical(oponeo_df: pd.DataFrame, canonical_ref: pd.DataFrame) -> 
         "ipcode",
         "extra_discount",
         "is_extra_3pct_set",
-        "oponeo_all_in_plus_extra",
+        "opon_all_in_plus_extra",
     ]
     for col in canonical_cols:
         if col in best.columns:

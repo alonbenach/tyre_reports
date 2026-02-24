@@ -300,7 +300,7 @@ def _segment_footer_lines(segment_reference_group: str, key_fitments: str) -> li
     return [
         "Weekly data",
         f"Segment Reference Group: {seg}",
-        "Weighted on Oponeo.pl stock",
+        "Weighted on PlatformaOpon.pl stock",
         f"Key fitments: {key}",
     ]
 

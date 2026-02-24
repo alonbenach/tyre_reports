@@ -1,6 +1,6 @@
 # Moto Weekly Report Pipeline
 
-Weekly data pipeline for Oponeo producer stats, focused on motorcycle analysis for Pirelli vs top competitors.
+Weekly data pipeline for Platforma Opon producer stats, focused on motorcycle analysis for Pirelli vs top competitors.
 
 ## What It Builds
 
@@ -20,7 +20,7 @@ Weekly data pipeline for Oponeo producer stats, focused on motorcycle analysis f
   - `data/campaign rules/price list Pirelli and competitors.xlsx`
   - `data/campaign rules/campaign 2026.xlsx`
 - Campaign enrichment:
-  - Oponeo All-In discount
+  - Opon All-In discount
   - +3% extra discount pattern-set list
 - Canonical matching:
   - brand + size-root candidate generation

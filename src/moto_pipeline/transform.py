@@ -131,8 +131,8 @@ def build_motorcycle_silver(
     canonical_ref, campaign_ctx = build_canonical_reference()
     moto = match_to_canonical(moto, canonical_ref)
     assert_high_confidence_token_integrity(moto)
-    moto["oponeo_all_in_discount"] = campaign_ctx.oponeo_all_in_discount
-    moto["effective_all_in_discount"] = moto["oponeo_all_in_plus_extra"].fillna(campaign_ctx.oponeo_all_in_discount)
+    moto["opon_all_in_discount"] = campaign_ctx.opon_all_in_discount
+    moto["effective_all_in_discount"] = moto["opon_all_in_plus_extra"].fillna(campaign_ctx.opon_all_in_discount)
     moto["expected_net_price_from_list"] = moto["list_price"] * (1 - moto["effective_all_in_discount"])
     moto["discount_vs_list_implied"] = 1 - (moto["price_pln"] / moto["list_price"])
 
@@ -165,7 +165,7 @@ def build_motorcycle_silver(
         "ipcode",
         "is_extra_3pct_set",
         "extra_discount",
-        "oponeo_all_in_discount",
+        "opon_all_in_discount",
         "effective_all_in_discount",
         "expected_net_price_from_list",
         "discount_vs_list_implied",
