@@ -9,7 +9,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from moto_pipeline.report import build_excel_report, build_pdf_report  # noqa: E402
+from moto_pipeline.report_price_offer import build_excel_report, build_pdf_report  # noqa: E402
 from moto_pipeline.settings import GOLD_DIR, REPORT_DIR  # noqa: E402
 
 

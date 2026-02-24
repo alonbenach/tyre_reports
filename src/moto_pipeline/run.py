@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .ingest import ingest_all_weekly_csv
 from .marts import build_gold_marts
-from .report import build_excel_report, build_pdf_report
+from .report_price_offer import build_excel_report, build_pdf_report
 from .settings import DATA_DIR, GOLD_DIR, RAW_DIR, REPORT_DIR, SILVER_DIR
 from .transform import build_motorcycle_silver
 
