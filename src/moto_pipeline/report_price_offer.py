@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ BRAND_COLORS = {
     "Dunlop": "#F9A825",
     "Continental": "#FF8F00",
 }
+TOP_OFFERORS = 3
 
 
 def _read_gold(gold_dir: Path, filename: str) -> pd.DataFrame:
@@ -362,6 +364,47 @@ def _draw_brand_logo_strip(fig, brands: list[str], logos_dir: Path = LOGOS_DIR) 
         )
 
 
+def _top_offerors_price_mean(
+    df: pd.DataFrame,
+    scope_cols: list[str],
+    top_n: int = TOP_OFFERORS,
+    out_col: str = "price",
+) -> pd.DataFrame:
+    """Compute mean price from top-N offerors by stock per scope."""
+    required = set(scope_cols + ["seller_norm", "stock_qty", "price_pln"])
+    if df.empty or any(col not in df.columns for col in required):
+        return pd.DataFrame(columns=[*scope_cols, out_col])
+
+    work = df.copy()
+    work["stock_qty"] = pd.to_numeric(work["stock_qty"], errors="coerce").fillna(0)
+    work["price_pln"] = pd.to_numeric(work["price_pln"], errors="coerce")
+    work = work[work["price_pln"].notna()].copy()
+    if work.empty:
+        return pd.DataFrame(columns=[*scope_cols, out_col])
+
+    ranked = (
+        work.groupby(scope_cols + ["seller_norm"], dropna=False)["stock_qty"]
+        .sum()
+        .reset_index()
+        .sort_values(scope_cols + ["stock_qty", "seller_norm"], ascending=[*([True] * len(scope_cols)), False, True])
+    )
+    top = ranked.groupby(scope_cols, dropna=False).head(max(int(top_n), 1))
+    scoped = work.merge(top[scope_cols + ["seller_norm"]], on=scope_cols + ["seller_norm"], how="inner")
+    if scoped.empty:
+        return pd.DataFrame(columns=[*scope_cols, out_col])
+
+    seller_means = (
+        scoped.groupby(scope_cols + ["seller_norm"], dropna=False)["price_pln"]
+        .mean()
+        .reset_index(name="_seller_mean_price")
+    )
+    return (
+        seller_means.groupby(scope_cols, dropna=False)["_seller_mean_price"]
+        .mean()
+        .reset_index(name=out_col)
+    )
+
+
 def _draw_recap_matrix_page(
     fig, recap_latest: pd.DataFrame, logos_dir: Path = LOGOS_DIR
 ) -> None:
@@ -570,10 +613,11 @@ def _build_positioning_across_lines_latest(
     if work.empty:
         return {}, brands
 
-    agg = (
-        work.groupby(["segment", "line", "brand"], dropna=False)
-        .agg(price=("price_pln", "median"))
-        .reset_index()
+    agg = _top_offerors_price_mean(
+        work,
+        scope_cols=["segment", "line", "brand"],
+        top_n=TOP_OFFERORS,
+        out_col="price",
     )
     bases = (
         agg[(agg["brand"] == "Pirelli") & (agg["line"] == "1ST")][["segment", "price"]]
@@ -777,9 +821,19 @@ def _build_segment_pattern_checkpoint(
         .agg(
             stock_qty=("stock_qty", "sum"),
             rows=("product_code", "count"),
-            price_cw=("price_pln", "median"),
+            price_cw=("price_pln", "mean"),
         )
         .reset_index()
+    )
+    top_pattern_prices = _top_offerors_price_mean(
+        latest_slice,
+        scope_cols=["brand", "pattern_set"],
+        top_n=TOP_OFFERORS,
+        out_col="price_cw",
+    )
+    top_patterns = (
+        top_patterns.drop(columns=["price_cw"])
+        .merge(top_pattern_prices, on=["brand", "pattern_set"], how="left")
         .sort_values(
             ["brand", "stock_qty", "rows", "price_cw", "pattern_set"],
             ascending=[True, False, False, False, True],
@@ -809,12 +863,12 @@ def _build_segment_pattern_checkpoint(
             continue
 
         bp = work[(work["brand"] == brand) & (work["pattern_set"] == pattern)].copy()
-        ts = (
-            bp.groupby("snapshot_date", dropna=False)
-            .agg(price=("price_pln", "median"))
-            .reset_index()
-            .sort_values("snapshot_date")
-        )
+        ts = _top_offerors_price_mean(
+            bp,
+            scope_cols=["snapshot_date"],
+            top_n=TOP_OFFERORS,
+            out_col="price",
+        ).sort_values("snapshot_date")
         if ts.empty:
             rows.append(record)
             continue
@@ -1140,7 +1194,7 @@ def _draw_segment_pattern_checkpoint_page(
         )
 
     ax_ts.set_title("Weekly Price Evolution by Brand", fontsize=11, fontweight="bold")
-    ax_ts.set_ylabel("Median Price (PLN)")
+    ax_ts.set_ylabel(f"Mean Price (Top {TOP_OFFERORS} Offerors, PLN)")
     ax_ts.yaxis.set_major_locator(MaxNLocator(nbins=7))
     ax_ts.grid(axis="y", alpha=0.30)
     ax_ts.legend(frameon=False, ncol=3, fontsize=8, loc="best")
@@ -1333,10 +1387,17 @@ def _build_key_fitment_table(
         .agg(
             stock_qty=("stock_qty", "sum"),
             rows=("product_code", "count"),
-            median_price=("price_pln", "median"),
+            mean_price=("price_pln", "mean"),
         )
         .reset_index()
     )
+    latest_price = _top_offerors_price_mean(
+        latest_df,
+        scope_cols=group_cols,
+        top_n=TOP_OFFERORS,
+        out_col="mean_price",
+    )
+    latest_agg = latest_agg.drop(columns=["mean_price"]).merge(latest_price, on=group_cols, how="left")
 
     seller_rank = (
         latest_df.groupby(group_cols + ["seller_norm"], dropna=False)["stock_qty"]
@@ -1356,18 +1417,25 @@ def _build_key_fitment_table(
         prev_agg = (
             prev_df.groupby(group_cols, dropna=False)
             .agg(
-                prev_median_price=("price_pln", "median"),
+                prev_mean_price=("price_pln", "mean"),
                 prev_rows=("product_code", "count"),
             )
             .reset_index()
         )
         latest_agg = latest_agg.merge(prev_agg, on=group_cols, how="left")
+        prev_price = _top_offerors_price_mean(
+            prev_df,
+            scope_cols=group_cols,
+            top_n=TOP_OFFERORS,
+            out_col="prev_mean_price",
+        )
+        latest_agg = latest_agg.drop(columns=["prev_mean_price"]).merge(prev_price, on=group_cols, how="left")
     else:
-        latest_agg["prev_median_price"] = np.nan
+        latest_agg["prev_mean_price"] = np.nan
         latest_agg["prev_rows"] = np.nan
 
     latest_agg["wow_price_delta"] = (
-        latest_agg["median_price"] - latest_agg["prev_median_price"]
+        latest_agg["mean_price"] - latest_agg["prev_mean_price"]
     )
     latest_agg["wow_rows_delta"] = latest_agg["rows"] - latest_agg["prev_rows"]
 
