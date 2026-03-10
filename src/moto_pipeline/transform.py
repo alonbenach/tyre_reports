@@ -106,6 +106,23 @@ def build_motorcycle_silver(
 
     full = pd.concat(chunks, ignore_index=True)
     moto = full.loc[full["type"] == MOTORCYCLE_TYPE].copy()
+    total_moto_rows = len(moto)
+    current_year = int(pd.Timestamp.now().year)
+    allowed_production_years = {current_year, current_year - 1}
+
+    moto["production_year"] = pd.to_numeric(moto["productionYear"], errors="coerce").astype("Int64")
+    moto = moto[moto["production_year"].isin(allowed_production_years)].copy()
+    filtered_out_rows = total_moto_rows - len(moto)
+    logger.info(
+        (
+            "Applied production year filter: kept only %s and %s; "
+            "dropped %s of %s motorcycle rows."
+        ),
+        current_year,
+        current_year - 1,
+        filtered_out_rows,
+        total_moto_rows,
+    )
 
     moto["brand"] = normalize_text(moto["producer"])
     moto["seller_norm"] = normalize_text(moto["seller"])
@@ -141,6 +158,7 @@ def build_motorcycle_silver(
         "iso_year",
         "iso_week",
         "brand",
+        "production_year",
         "seller_norm",
         "product_code",
         "EAN",

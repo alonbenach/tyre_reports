@@ -31,6 +31,36 @@ def _norm_text(value: object) -> str:
     return text
 
 
+def _norm_party_name(value: object) -> str:
+    """Normalize customer or seller names for loose entity matching.
+
+    Args:
+        value: Raw party name.
+
+    Returns:
+        Uppercased token string with legal/company boilerplate removed.
+    """
+    text = _norm_text(value)
+    if not text:
+        return ""
+    tokens = [t for t in text.split() if t not in {
+        "SP",
+        "Z",
+        "OO",
+        "O",
+        "SA",
+        "SK",
+        "K",
+        "AG",
+        "POLSKA",
+        "SPOLKA",
+        "OGRANICZONA",
+        "ODPOWIEDZIALNOSCIA",
+        "DAWNIEJ",
+    }]
+    return " ".join(tokens)
+
+
 def _contains_phrase(text: str, phrase: str) -> int:
     """Return 1 when phrase exists as a full-token sequence in text.
 
@@ -133,6 +163,93 @@ def _read_campaign_pattern_extras(campaign_file: Path = CAMPAIGN_FILE) -> pd.Dat
     section["pattern_set_norm"] = section["pattern_set"].map(_norm_text)
     section = section[section["pattern_set_norm"] != ""]
     return section[["pattern_set_norm", "extra_discount"]].drop_duplicates()
+
+
+def load_campaign_customer_discounts(campaign_file: Path = CAMPAIGN_FILE) -> pd.DataFrame:
+    """Load customer-channel discounts from the campaign workbook.
+
+    Args:
+        campaign_file: Campaign workbook path.
+
+    Returns:
+        Dataframe with one row per campaign customer channel.
+    """
+    raw = pd.read_excel(campaign_file, sheet_name="rebate scheme", header=1)
+    top = raw.iloc[1:9, [0, 1, 2]].copy()
+    top.columns = ["customer", "additional_discount_for_pattern_sets", "all_in_discount"]
+    top["customer"] = top["customer"].astype("string").str.strip()
+    top["customer_norm"] = top["customer"].map(_norm_party_name)
+    top["additional_discount_for_pattern_sets"] = pd.to_numeric(
+        top["additional_discount_for_pattern_sets"], errors="coerce"
+    )
+    top["all_in_discount"] = pd.to_numeric(top["all_in_discount"], errors="coerce")
+    top = top[top["customer"].notna() & (top["customer"] != "")]
+    return top.reset_index(drop=True)
+
+
+def match_party_to_campaign_customer(
+    party_name: object,
+    customers: pd.DataFrame,
+    min_score: float = 88.0,
+) -> tuple[str | None, float]:
+    """Match a seller/customer name to a campaign channel label.
+
+    Args:
+        party_name: Seller or customer name from weekly data.
+        customers: Campaign customer discount table.
+        min_score: Minimum fuzzy score for accepting a non-exact match.
+
+    Returns:
+        Tuple of matched customer label and confidence score.
+    """
+    party_norm = _norm_party_name(party_name)
+    if not party_norm or customers.empty:
+        return None, 0.0
+
+    exact = customers[customers["customer_norm"].eq(party_norm)]
+    if not exact.empty:
+        return str(exact.iloc[0]["customer"]), 100.0
+
+    contains = customers[
+        customers["customer_norm"].astype("string").map(
+            lambda c: bool(c) and (c in party_norm or party_norm in c)
+        )
+    ]
+    if not contains.empty:
+        row = contains.iloc[0]
+        score = float(
+            max(
+                fuzz.token_set_ratio(party_norm, str(row["customer_norm"])),
+                fuzz.partial_ratio(party_norm, str(row["customer_norm"])),
+            )
+        )
+        return str(row["customer"]), score
+
+    party_tokens = {t for t in party_norm.split() if t}
+    scored = customers.copy()
+    scored["shared_token_count"] = scored["customer_norm"].astype("string").map(
+        lambda c: len(party_tokens & {t for t in str(c).split() if t})
+    )
+    scored = scored[scored["shared_token_count"] > 0].copy()
+    if scored.empty:
+        return None, 0.0
+
+    scored["match_score"] = scored["customer_norm"].astype("string").map(
+        lambda c: float(
+            max(
+                fuzz.token_set_ratio(party_norm, c),
+                fuzz.token_sort_ratio(party_norm, c),
+                fuzz.partial_ratio(party_norm, c),
+            )
+        )
+    )
+    best = scored.sort_values(
+        ["match_score", "shared_token_count", "customer"],
+        ascending=[False, False, True],
+    ).iloc[0]
+    if float(best["match_score"]) < min_score:
+        return None, float(best["match_score"])
+    return str(best["customer"]), float(best["match_score"])
 
 
 def load_canonical_mapping(mapping_file: Path = MAPPING_FILE) -> pd.DataFrame:
