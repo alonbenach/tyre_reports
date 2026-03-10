@@ -117,6 +117,12 @@ def _parse_group_label(segment_reference_group: str) -> tuple[str, str]:
     return segment, line
 
 
+def _group_base_label(segment_reference_group: object) -> str:
+    """Return group label without trailing rank suffix like ``1st``."""
+    text = str(segment_reference_group or "").strip()
+    return re.sub(r"\s+(1st|2nd|3rd)\s*$", "", text, flags=re.I).strip()
+
+
 def _fitment_roots(key_fitments: str) -> list[str]:
     """Extract normalized fitment roots from key fitments text.
 
@@ -543,12 +549,9 @@ def _draw_pdf_table(
     bbox: list[float],
     col_widths: list[float],
 ) -> None:
-    """Draw a document-style table with merged key-fitment cells."""
-    from matplotlib.patches import Rectangle
-
+    """Draw a minimal document-style table with merged key-fitment cells."""
     left, bottom, width, height = bbox
     nrows = len(display)
-    ncols = len(display.columns)
     widths = np.array(col_widths, dtype=float)
     widths = widths / widths.sum()
     x_edges = [left]
@@ -558,20 +561,6 @@ def _draw_pdf_table(
     header_h = min(0.05, height * 0.09)
     body_h = height - header_h
     row_h = body_h / max(nrows, 1)
-
-    def draw_cell(x0: float, y0: float, w: float, h: float, face: str, edge: str, lw: float) -> None:
-        ax.add_patch(
-            Rectangle(
-                (x0, y0),
-                w,
-                h,
-                facecolor=face,
-                edgecolor=edge,
-                linewidth=lw,
-                transform=ax.transAxes,
-                clip_on=False,
-            )
-        )
 
     def draw_text(text: str, x0: float, y0: float, w: float, h: float, align: str = "center", bold: bool = False) -> None:
         if text == "":
@@ -602,26 +591,22 @@ def _draw_pdf_table(
         x0 = x_edges[col_idx]
         w = x_edges[col_idx + 1] - x0
         y0 = bottom + body_h
-        draw_cell(x0, y0, w, header_h, "#E5E7EB", "#D1D5DB", 0.8)
         draw_text(str(column), x0, y0, w, header_h, align="center", bold=True)
 
     left_align_cols = {"Segment Ref Group", "Key Fitments", "Brand", "Pattern Set", "Size", "First Player"}
     right_align_cols = {"Stock", "Price", "Disc %", "vs LW", "Mark-Up", "Mark-Up vs LW (pp)"}
     key_fitments_idx = list(display.columns).index("Key Fitments")
-    group_spans = _group_spans(source["Segment Ref Group"])
-    group_start_rows = {start for start, _end in group_spans if start > 0}
+    line_idx = list(display.columns).index("Line")
+    brand_idx = list(display.columns).index("Brand")
+    group_spans = _group_spans(source["_group_base"].astype("string"))
 
     for row_idx in range(nrows):
         y0 = bottom + body_h - ((row_idx + 1) * row_h)
-        fill = "#FFFFFF" if (row_idx + 1) % 2 else "#F9FAFB"
-        border_lw = 1.25 if row_idx in group_start_rows else 0.6
-        border_color = "#9CA3AF" if row_idx in group_start_rows else "#D1D5DB"
         for col_idx, column in enumerate(display.columns):
             if col_idx == key_fitments_idx:
                 continue
             x0 = x_edges[col_idx]
             w = x_edges[col_idx + 1] - x0
-            draw_cell(x0, y0, w, row_h, fill, border_color, border_lw)
             text = str(display.iloc[row_idx, col_idx])
             if text == "nan":
                 text = ""
@@ -636,14 +621,58 @@ def _draw_pdf_table(
         top_y = bottom + body_h - (start * row_h)
         y0 = bottom + body_h - ((end + 1) * row_h)
         h = top_y - y0
-        fill = "#FFFFFF" if (start + 1) % 2 else "#F9FAFB"
-        border_lw = 1.25 if start > 0 else 0.6
-        border_color = "#9CA3AF" if start > 0 else "#D1D5DB"
         x0 = x_edges[key_fitments_idx]
         w = x_edges[key_fitments_idx + 1] - x0
-        draw_cell(x0, y0, w, h, fill, border_color, border_lw)
         label = str(source.iloc[start]["Key Fitments"])
         draw_text(label, x0, y0, w, h, align="left")
+
+    full_left = x_edges[0]
+    full_right = x_edges[-1]
+    line_left = x_edges[line_idx]
+    brand_left = x_edges[brand_idx]
+    dot_style = (0, (1.2, 2.0))
+
+    for row_idx in range(1, nrows):
+        y = bottom + body_h - (row_idx * row_h)
+        curr = source.iloc[row_idx]
+        prev = source.iloc[row_idx - 1]
+
+        curr_group = str(curr["_group_base"])
+        prev_group = str(prev["_group_base"])
+        curr_line = str(curr["Line"])
+        prev_line = str(prev["Line"])
+        curr_brand = str(curr["Brand"])
+        prev_brand = str(prev["Brand"])
+
+        if curr_group != prev_group:
+            ax.plot(
+                [full_left, full_right],
+                [y, y],
+                color="#6B7280",
+                linewidth=1.1,
+                transform=ax.transAxes,
+                clip_on=False,
+            )
+        elif curr_line != prev_line:
+            ax.plot(
+                [line_left, full_right],
+                [y, y],
+                color="#9CA3AF",
+                linewidth=0.9,
+                linestyle=dot_style,
+                transform=ax.transAxes,
+                clip_on=False,
+            )
+        elif curr_brand != prev_brand:
+            ax.plot(
+                [brand_left, full_right],
+                [y, y],
+                color="#9CA3AF",
+                linewidth=0.9,
+                linestyle=dot_style,
+                transform=ax.transAxes,
+                clip_on=False,
+            )
 
 
 def build_excel_report(
@@ -763,6 +792,7 @@ def build_pdf_report(
             lambda s: str(s).replace(" & ", "\n& ")
         )
         source_display = display.copy()
+        source_display["_group_base"] = source_display["Segment Ref Group"].map(_group_base_label)
         display = _collapse_repeated_rows(
             display,
             cols=["Segment Ref Group", "Line", "Key Fitments", "Brand", "Pattern Set"],
