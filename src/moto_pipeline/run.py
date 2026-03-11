@@ -41,7 +41,7 @@ def build_logger() -> logging.Logger:
 
 def run_pipeline(
     skip_pdf: bool = False,
-    report: str = "positioning",
+    report: str = "both",
 ) -> None:
     """Run full weekly pipeline from ingest to report generation.
 
@@ -89,8 +89,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         choices=["positioning", "offeror", "both"],
-        default="positioning",
-        help="Choose report output flow. Default keeps current PRICE_POSITIONING behavior.",
+        default="both",
+        help="Choose report output flow. Default runs both reports in sequence.",
     )
     return parser.parse_args()
 

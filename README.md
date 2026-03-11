@@ -9,6 +9,8 @@ Weekly data pipeline for Platforma Opon producer stats, focused on motorcycle an
 - `data/gold/*.csv` marts for market, brands, fitments, sellers, positioning, recap, and mapping quality
 - `reports/PRICE_POSITIONING_Wxx_Poland.xlsx`
 - `reports/PRICE_POSITIONING_Wxx_Poland.pdf` (if `matplotlib` is installed)
+- `reports/offeror_focus_Wxx_Poland.xlsx`
+- `reports/offeror_focus_Wxx_Poland.pdf` (if `matplotlib` is installed)
 
 ## Scope Implemented
 
@@ -50,6 +52,8 @@ Weekly data pipeline for Platforma Opon producer stats, focused on motorcycle an
 python scripts/run_weekly.py
 ```
 
+The default run now rebuilds the data pipeline once and generates both reports in sequence.
+
 Excel only:
 
 ```powershell
@@ -63,6 +67,7 @@ python scripts/ingest_weekly.py
 python scripts/transform_motorcycle.py
 python scripts/build_marts.py
 python scripts/generate_report.py --skip-pdf
+python scripts/generate_offeror_focus.py --skip-pdf
 ```
 
 ## Notes

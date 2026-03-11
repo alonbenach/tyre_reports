@@ -808,23 +808,35 @@ def build_pdf_report(
 
     with PdfPages(output) as pdf:
         fig = plt.figure(figsize=(18, 9))
+        fig.patch.set_facecolor("#F8FAFC")
         ax = fig.add_subplot(111)
         fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
         ax.axis("off")
+        ax.add_patch(
+            plt.Rectangle(
+                (0.01, 0.905),
+                0.98,
+                0.085,
+                transform=ax.transAxes,
+                facecolor="#E0F2FE",
+                edgecolor="none",
+                zorder=0,
+            )
+        )
         fig.suptitle(
             f"OFFEROR FOCUS - WEEK {week.replace('W', '')}",
             fontsize=20,
             fontweight="bold",
-            y=0.97,
+            y=0.978,
         )
         fig.text(
             0.5,
-            0.94,
+            0.928,
             "TOP - KEY FITMENT PRODUCTS (Top 1 Offeror) | Pirelli + Metzeler",
             ha="center",
             va="center",
             fontsize=11,
-            color="#374151",
+            color="#0F4C81",
         )
 
         _draw_pdf_table(
