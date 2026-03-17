@@ -595,7 +595,7 @@ def _build_positioning_across_lines_latest(
 
     is_hc = work.get("is_high_confidence_match")
     if is_hc is not None:
-        work = work[is_hc.fillna(False)]
+        work = work[pd.Series(is_hc, index=work.index).fillna(False).astype(bool)]
     work = work[work["snapshot_date"] == latest].copy()
     work = work[work["brand"].isin(brands)].copy()
     if work.empty:
@@ -807,7 +807,7 @@ def _build_segment_pattern_checkpoint(
     ]
     work = work[work["price_pln"].notna()]
     if "is_high_confidence_match" in work.columns:
-        work = work[work["is_high_confidence_match"].fillna(False)]
+        work = work[work["is_high_confidence_match"].fillna(False).astype(bool)]
     work = work[work["pattern_set"].notna() & (work["pattern_set"] != "")]
     if work.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -1294,7 +1294,10 @@ def _pivot_heatmap(
     ax.figure.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
 
 
-def _focused_segment_groups(max_groups: int = 10) -> list[str]:
+def _focused_segment_groups(
+    max_groups: int = 10,
+    canonical_mapping: pd.DataFrame | None = None,
+) -> list[str]:
     """Return focused groups in fixed Italian-style narrative order."""
     preferred_order = [
         "706 - SUPERSPORT 1st",
@@ -1310,7 +1313,11 @@ def _focused_segment_groups(max_groups: int = 10) -> list[str]:
     ]
 
     try:
-        mapping = load_canonical_mapping()
+        mapping = (
+            canonical_mapping.copy()
+            if canonical_mapping is not None
+            else load_canonical_mapping()
+        )
         groups = (
             mapping["segment_reference_group"]
             .astype("string")
@@ -1506,6 +1513,7 @@ def build_pdf_report(
     report_dir: Path = REPORT_DIR,
     silver_dir: Path = SILVER_DIR,
     logos_dir: Path = LOGOS_DIR,
+    canonical_mapping: pd.DataFrame | None = None,
 ) -> Path | None:
     """Generate multi-page PDF report.
 
@@ -1560,7 +1568,11 @@ def build_pdf_report(
 
     with PdfPages(output) as pdf:
         page_no = 1
-        mapping = load_canonical_mapping()
+        mapping = (
+            canonical_mapping.copy()
+            if canonical_mapping is not None
+            else load_canonical_mapping()
+        )
         keyfit_by_group: dict[str, str] = {}
         if (
             not mapping.empty
@@ -1608,7 +1620,10 @@ def build_pdf_report(
         )
         _save_page(fig, add_footer=False)
 
-        focused_groups = _focused_segment_groups(max_groups=10)
+        focused_groups = _focused_segment_groups(
+            max_groups=10,
+            canonical_mapping=mapping,
+        )
         primary_group = "706 - SUPERSPORT 1st"
         if primary_group not in focused_groups:
             primary_group = (

@@ -226,6 +226,8 @@ def _build_page1_table(
     silver: pd.DataFrame,
     latest: pd.Timestamp,
     prev: pd.Timestamp | None,
+    canonical_mapping: pd.DataFrame | None = None,
+    customer_discounts: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build page-1 offeror table from canonical-matched rows.
 
@@ -237,8 +239,16 @@ def _build_page1_table(
     Returns:
         Page-1 table dataframe.
     """
-    mapping = load_canonical_mapping()
-    customer_discounts = load_campaign_customer_discounts()
+    mapping = (
+        canonical_mapping.copy()
+        if canonical_mapping is not None
+        else load_canonical_mapping()
+    )
+    customer_discounts = (
+        customer_discounts.copy()
+        if customer_discounts is not None
+        else load_campaign_customer_discounts()
+    )
     mapping = mapping[
         mapping["segment_reference_group"].astype("string").isin(GROUP_ORDER)
         & mapping["brand"].astype("string").isin(OFFEROR_BRANDS)
@@ -264,7 +274,7 @@ def _build_page1_table(
     )
     work = work[
         work["brand"].astype("string").isin(OFFEROR_BRANDS)
-        & work["is_high_confidence_match"].fillna(False)
+        & work["is_high_confidence_match"].fillna(False).astype(bool)
     ].copy()
     if work.empty:
         return pd.DataFrame()
@@ -680,6 +690,8 @@ def build_excel_report(
     gold_dir: Path = GOLD_DIR,
     report_dir: Path = REPORT_DIR,
     silver_dir: Path = SILVER_DIR,
+    canonical_mapping: pd.DataFrame | None = None,
+    customer_discounts: pd.DataFrame | None = None,
 ) -> Path:
     """Generate Offeror Focus Excel report (page 1 data only for now).
 
@@ -700,7 +712,13 @@ def build_excel_report(
         raise ValueError("Unable to determine latest snapshot date.")
 
     silver = _read_silver(silver_dir)
-    table = _build_page1_table(silver=silver, latest=latest, prev=prev)
+    table = _build_page1_table(
+        silver=silver,
+        latest=latest,
+        prev=prev,
+        canonical_mapping=canonical_mapping,
+        customer_discounts=customer_discounts,
+    )
     week = _week_label(latest)
     output = report_dir / f"offeror_focus_{week}_Poland.xlsx"
 
@@ -716,6 +734,8 @@ def build_pdf_report(
     gold_dir: Path = GOLD_DIR,
     report_dir: Path = REPORT_DIR,
     silver_dir: Path = SILVER_DIR,
+    canonical_mapping: pd.DataFrame | None = None,
+    customer_discounts: pd.DataFrame | None = None,
 ) -> Path | None:
     """Generate Offeror Focus PDF report (page 1 only).
 
@@ -743,7 +763,13 @@ def build_pdf_report(
         raise ValueError("Unable to determine latest snapshot date.")
 
     silver = _read_silver(silver_dir)
-    table = _build_page1_table(silver=silver, latest=latest, prev=prev)
+    table = _build_page1_table(
+        silver=silver,
+        latest=latest,
+        prev=prev,
+        canonical_mapping=canonical_mapping,
+        customer_discounts=customer_discounts,
+    )
     week = _week_label(latest)
     output = report_dir / f"offeror_focus_{week}_Poland.pdf"
 

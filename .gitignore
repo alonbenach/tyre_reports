@@ -11,6 +11,14 @@ __pycache__/
 data/
 instructions/
 reports/
+logs/
+
+# Database runtime artifacts
+database/*.db
+database/*.db-*
+database/_test_work/
+database/_export_work/
+database/__pycache__/
 
 # Keep only logo usage instructions; ignore logo assets
 assets/logos/*
@@ -23,4 +31,3 @@ assets/logos/*
 *.parquet
 *.pdf
 *.tsv
-
