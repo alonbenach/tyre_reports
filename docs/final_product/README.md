@@ -31,6 +31,8 @@ docs/
       10_observability_and_run_control.md
       11_packaging_and_distribution.md
       12_testing_and_parity.md
+      13_access_control_and_admin_mode.md
+      14_environments_and_cicd.md
 
 src/
   moto_app/
@@ -176,6 +178,10 @@ database/
     Build, install, executable packaging, and deployment rules.
 12. `testing_and_parity`
     Validation against the current pipeline and regression protection.
+13. `access_control_and_admin_mode`
+    Single-user lock model, read-only secondary access, and admin-only capabilities.
+14. `environments_and_cicd`
+    Development vs production environment model, branch policy, and CI/CD/test gates.
 
 ## Suggested Delivery Sequence
 
@@ -201,6 +207,8 @@ database/
 ### Phase 4: Release
 
 11. Packaging and distribution
+12. Access control and admin mode
+13. Environments and CI/CD
 
 ## Task Control Guidance
 
@@ -221,3 +229,5 @@ Recommended usage:
 - Excel files may remain source material for reference-data refreshes, but not as live runtime dependencies.
 - Excel and PDF remain output formats, not storage layers.
 - Frontend work should start only after backend parity is acceptable.
+- Packaged operation is planned as a shared-drive app with runtime components kept close together for operator convenience.
+- Only one user should be allowed to hold the writable/operator session at a time; additional users should open in read-only mode.
