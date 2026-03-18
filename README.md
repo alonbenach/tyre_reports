@@ -72,7 +72,7 @@ python scripts/generate_offeror_focus.py --skip-pdf
 
 ## Notes
 
-- Input weekly files are expected at `data/YYYY-MM-DD.csv`.
+- Input weekly files are expected at `data/ingest/YYYY-MM-DD.csv`.
 - CSV parser uses tolerant decoding (`encoding_errors="replace"`) to handle mixed source text encodings.
 - For very large histories, consider incremental processing and a database-backed gold layer.
 - To show logos in charts, place files in `assets/logos/` (see `assets/logos/README.md`).

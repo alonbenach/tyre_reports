@@ -2,6 +2,10 @@
 
 This folder defines the planned module structure for the SQLite-backed motorcycle reporting application. The goal is to break implementation into bounded work packages before code changes begin.
 
+Long-form overview document:
+
+- [`Moto_Weekly_Operator_App_Overview.md`](/c:/Users/benacal001/Documents/projects/moto_analysis/docs/final_product/Moto_Weekly_Operator_App_Overview.md)
+
 ## Target Product
 
 The final product is a local Windows application that:
