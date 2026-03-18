@@ -8,7 +8,7 @@ This module is part of the backend/application layer.
 
 ## Responsibilities
 
-- define app paths for data, database, logs, reports, and assets
+- define app paths for data, intake, database, logs, reports, and assets
 - validate required directories on startup
 - store operator-safe defaults
 - expose report mode and run-mode options
@@ -63,6 +63,7 @@ This module is part of the backend/application layer.
 - The packaged app will treat the project data area as the working-data root in development and will resolve a user-data location in packaged mode.
 - The SQLite database path for development planning is `database/moto_pipeline.db`.
 - Reports remain under `reports/`.
+- Operator-selected weekly CSV files may be staged under `data/ingest/` before a run.
 - Raw snapshot archives remain under `data/raw/`.
 - Log files should live under a dedicated logs directory, planned as `logs/`.
 - The configuration layer will expose both backend-facing settings and a reduced set of frontend-safe display paths.
@@ -74,6 +75,7 @@ Development-oriented layout:
 
 ```text
 data/
+  ingest/
   raw/
   campaign rules/
 database/
@@ -97,6 +99,7 @@ The configuration object should expose at least:
 
 - application root path
 - data directory
+- intake directory
 - raw archive directory
 - database path
 - reports directory

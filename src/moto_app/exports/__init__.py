@@ -6,7 +6,7 @@ from .service import (
     export_offeror_focus_reports,
     export_positioning_reports,
 )
-from .query import GeneratedReportSummary, list_generated_reports
+from .query import GeneratedReportSummary, list_current_generated_reports, list_generated_reports
 
 __all__ = [
     "ExportError",
@@ -14,5 +14,6 @@ __all__ = [
     "GeneratedReportSummary",
     "export_offeror_focus_reports",
     "export_positioning_reports",
+    "list_current_generated_reports",
     "list_generated_reports",
 ]

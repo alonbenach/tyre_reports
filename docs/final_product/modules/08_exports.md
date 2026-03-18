@@ -28,8 +28,8 @@ This module is part of the backend/application layer.
 
 ## Outputs
 
-- Excel files in `reports/`
-- PDF files in `reports/`
+- Excel files in report-specific `reports/<report_name>/excel/`
+- PDF files in report-specific `reports/<report_name>/reports/`
 - `generated_reports` metadata entries
 
 ## Communication With Other Modules
@@ -49,6 +49,7 @@ This module is part of the backend/application layer.
 
 - outputs are deliverables only, not dependencies
 - file names should remain familiar to business users
+- report families and file formats should be separated into predictable folders for operator browsing
 - export failures should not corrupt database state
 
 ## Main Deliverables
@@ -67,8 +68,12 @@ This module is part of the backend/application layer.
 - Output filenames should remain familiar to current business users.
 - PDF generation remains optional in phase 1.
 - Generated files must be recorded in output metadata for traceability.
+- UI output browsing should reflect the current live files on disk, while full generation history remains in metadata for audit.
 - Recap and other presentation strings should be formatted in the export layer, not stored as the source of truth in the DB.
 - The SQL-backed export path should inject reference datasets into legacy report modules instead of letting report internals load spreadsheets directly.
+- Output layout should support `Outputs -> report name -> reports and excel folder` in the UI and on disk.
+- Legacy flat report files in `reports/` should be normalized into the canonical per-report folder layout when exports run.
+- A weekly run must export against that run's target snapshot date, not simply the maximum snapshot present in the database.
 
 ## Current Export Scope To Preserve
 
@@ -78,6 +83,18 @@ The backend export layer should preserve equivalent deliverables for:
 - `PRICE_POSITIONING_Wxx_Poland.pdf`
 - `offeror_focus_Wxx_Poland.xlsx`
 - `offeror_focus_Wxx_Poland.pdf`
+
+Expected folder layout:
+
+```text
+reports/
+  price_positioning/
+    excel/
+    reports/
+  offeror_focus/
+    excel/
+    reports/
+```
 
 ## Export Input Contract
 
@@ -111,3 +128,4 @@ src/
 - [x] remove remaining workbook-based reference reads from report internals for the SQL-backed export path
 - [x] define operator-facing export error messages
 - [x] decide how optional PDF generation is handled in packaged runtime
+- [x] define report-family output folder structure for Excel and PDF deliverables

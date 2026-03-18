@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QTimer, Qt, QUrl, Signal
+from datetime import date
+
+from PySide6.QtCore import QDate, QThread, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QPalette, QTextCursor
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
+    QComboBox,
+    QDateEdit,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -20,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QProgressBar,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -30,9 +37,73 @@ from PySide6.QtWidgets import (
 
 from moto_app.app import run_weekly_pipeline
 from moto_app.config import AppConfig, ensure_runtime_dirs, load_config
-from moto_app.exports import list_generated_reports
-from moto_app.observability import list_runs, latest_run_status, operator_message_for_exception
+from moto_app.exports import list_current_generated_reports, list_generated_reports
+from moto_app.ingest import duplicate_snapshot_message
+from moto_app.observability import (
+    YearCoverage,
+    list_runs,
+    list_year_coverage,
+    latest_run_status,
+    operator_message_for_exception,
+)
 from moto_app.ui.content import APP_TITLE, INSTRUCTIONS_TEXT
+
+REPORT_OPTIONS = [
+    ("positioning", "Price Positioning"),
+    ("offeror_focus", "Offeror Focus"),
+]
+REPORT_SLUGS = {
+    "positioning": "price_positioning",
+    "offeror_focus": "offeror_focus",
+}
+
+
+class CsvDropZone(QFrame):
+    file_dropped = Signal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.setObjectName("csvDropZone")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(4)
+        title = QLabel("Drop weekly CSV here")
+        title.setStyleSheet("font-weight: 700; color: #0f2229;")
+        subtitle = QLabel("Drag a CSV from Downloads or click Browse below.")
+        subtitle.setStyleSheet("color: #586a72;")
+        subtitle.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+    def dragEnterEvent(self, event) -> None:  # type: ignore[override]
+        if self._extract_csv_path(event.mimeData()) is not None:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # type: ignore[override]
+        file_path = self._extract_csv_path(event.mimeData())
+        if file_path is None:
+            event.ignore()
+            return
+        self.file_dropped.emit(file_path)
+        event.acceptProposedAction()
+
+    @staticmethod
+    def _extract_csv_path(mime_data) -> str | None:
+        if not mime_data.hasUrls():
+            return None
+        for url in mime_data.urls():
+            local_path = url.toLocalFile()
+            if local_path.lower().endswith(".csv"):
+                return local_path
+        return None
+
+
+class SnapshotDateEdit(QDateEdit):
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        event.ignore()
 
 
 class RunWorker(QThread):
@@ -80,6 +151,10 @@ class MotoOperatorWindow(QMainWindow):
         self.config = config
         self.worker: RunWorker | None = None
         self.last_log_path: Path | None = None
+        self.pending_source_file: Path | None = None
+        self.selected_source_label: QLabel | None = None
+        self.staged_name_label: QLabel | None = None
+        self.coverage_cards_layout: QHBoxLayout | None = None
 
         self.setWindowTitle(APP_TITLE)
         self.resize(1220, 800)
@@ -133,9 +208,103 @@ class MotoOperatorWindow(QMainWindow):
                 left: 14px;
                 padding: 0 4px 0 4px;
             }
+            QFrame#csvDropZone {
+                background: #f7faf9;
+                border: 2px dashed #8fb0b5;
+                border-radius: 12px;
+            }
             QCheckBox {
                 color: #17313b;
                 spacing: 8px;
+            }
+            QComboBox {
+                border: 1px solid #d8e2de;
+                border-radius: 8px;
+                background: #ffffff;
+                color: #17313b;
+                padding: 6px 10px;
+                min-width: 160px;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 28px;
+                border-left: 1px solid #d8e2de;
+                background: #f4f8f6;
+                border-top-right-radius: 8px;
+                border-bottom-right-radius: 8px;
+            }
+            QComboBox::down-arrow {
+                width: 10px;
+                height: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background: #ffffff;
+                color: #17313b;
+                selection-background-color: #0f6d7a;
+                selection-color: #ffffff;
+                border: 1px solid #d8e2de;
+                outline: 0;
+            }
+            QDateEdit {
+                border: 1px solid #d8e2de;
+                border-radius: 8px;
+                background: #ffffff;
+                color: #17313b;
+                padding: 6px 10px;
+                min-width: 150px;
+                max-width: 170px;
+            }
+            QDateEdit::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 28px;
+                border-left: 1px solid #d8e2de;
+                background: #f4f8f6;
+                border-top-right-radius: 8px;
+                border-bottom-right-radius: 8px;
+            }
+            QDateEdit::down-arrow {
+                width: 10px;
+                height: 10px;
+            }
+            QMenu, QListView, QAbstractItemView {
+                background: #ffffff;
+                color: #17313b;
+                selection-background-color: #0f6d7a;
+                selection-color: #ffffff;
+                border: 1px solid #d8e2de;
+                outline: 0;
+            }
+            QCalendarWidget QWidget {
+                background: #ffffff;
+                color: #17313b;
+            }
+            QCalendarWidget QToolButton {
+                background: #dfe8e4;
+                color: #17313b;
+                border: 0;
+                border-radius: 6px;
+                padding: 6px;
+                font-weight: 600;
+            }
+            QCalendarWidget QMenu {
+                background: #ffffff;
+                color: #17313b;
+            }
+            QCalendarWidget QSpinBox {
+                background: #ffffff;
+                color: #17313b;
+                border: 1px solid #d8e2de;
+                border-radius: 6px;
+            }
+            QCalendarWidget QAbstractItemView {
+                background: #ffffff;
+                color: #17313b;
+                selection-background-color: #0f6d7a;
+                selection-color: #ffffff;
+                alternate-background-color: #f4f8f6;
+                outline: 0;
             }
             QPushButton {
                 background: #0f6d7a;
@@ -179,6 +348,28 @@ class MotoOperatorWindow(QMainWindow):
                 padding: 8px;
                 line-height: 1.35em;
             }
+            QProgressBar {
+                border: 1px solid #d8e2de;
+                border-radius: 7px;
+                background: #f4f8f6;
+                text-align: center;
+                color: #17313b;
+                min-height: 18px;
+            }
+            QProgressBar::chunk {
+                background: #0f6d7a;
+                border-radius: 6px;
+            }
+            QMessageBox {
+                background: #eef2f0;
+            }
+            QMessageBox QLabel {
+                color: #17313b;
+                min-width: 260px;
+            }
+            QMessageBox QPushButton {
+                min-width: 88px;
+            }
             """
         )
 
@@ -217,6 +408,7 @@ class MotoOperatorWindow(QMainWindow):
         cards_row = QHBoxLayout()
         cards_row.setSpacing(12)
 
+        self.home_status_card = QLabel("No runs yet")
         self.home_status = QLabel("No runs yet")
         self.home_snapshot = QLabel("-")
         self.home_error = QLabel("-")
@@ -226,14 +418,26 @@ class MotoOperatorWindow(QMainWindow):
         self.home_outputs_count = QLabel("0")
 
         cards = [
-            ("Last run", self.home_status),
-            ("Snapshot", self.home_snapshot),
+            ("Last run", self.home_status_card),
             ("Recent runs", self.home_history_count),
             ("Outputs", self.home_outputs_count),
         ]
         for title, widget in cards:
             cards_row.addWidget(self._metric_card(title, widget), 1)
+        cards_row.addStretch(1)
         layout.addLayout(cards_row)
+
+        coverage_group = QGroupBox("Database Coverage")
+        coverage_layout = QVBoxLayout(coverage_group)
+        coverage_subtitle = QLabel(
+            "Loaded weeks in the SQLite store for the current year and previous year."
+        )
+        coverage_subtitle.setStyleSheet("color: #586a72;")
+        coverage_layout.addWidget(coverage_subtitle)
+        self.coverage_cards_layout = QHBoxLayout()
+        self.coverage_cards_layout.setSpacing(12)
+        coverage_layout.addLayout(self.coverage_cards_layout)
+        layout.addWidget(coverage_group)
 
         detail_row = QHBoxLayout()
         detail_row.setSpacing(12)
@@ -242,7 +446,7 @@ class MotoOperatorWindow(QMainWindow):
         grid = QGridLayout(group)
         rows = [
             ("Last run status", self.home_status),
-            ("Snapshot", self.home_snapshot),
+            ("Latest snapshot", self.home_snapshot),
             ("Last error", self.home_error),
             ("Database", self.home_db),
             ("Reports folder", self.home_reports),
@@ -281,6 +485,55 @@ class MotoOperatorWindow(QMainWindow):
         layout.addStretch(1)
         return card
 
+    def _coverage_card(self, coverage: YearCoverage) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(
+            "QFrame { background: #ffffff; border: 1px solid #d8e2de; border-radius: 12px; }"
+        )
+        layout = QVBoxLayout(card)
+        title = QLabel(str(coverage.iso_year))
+        title.setStyleSheet("color: #0f2229; font-size: 18px; font-weight: 700;")
+        subtitle = QLabel(
+            f"Data loaded through week {coverage.latest_week:02d} of 52"
+        )
+        subtitle.setStyleSheet("color: #586a72;")
+        progress = QProgressBar()
+        progress.setRange(0, 52)
+        progress.setValue(len(coverage.weeks_present))
+        progress.setFormat(f"{coverage.coverage_percent}% coverage")
+        weeks = QLabel(
+            "Weeks present: " + ", ".join(f"{week:02d}" for week in coverage.weeks_present)
+        )
+        weeks.setWordWrap(True)
+        weeks.setStyleSheet("color: #17313b;")
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addWidget(progress)
+        layout.addWidget(weeks)
+        layout.addStretch(1)
+        return card
+
+    def _refresh_home_coverage(self, db_path: Path) -> None:
+        if self.coverage_cards_layout is None:
+            return
+        while self.coverage_cards_layout.count():
+            item = self.coverage_cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        current_year = date.today().year
+        years = (current_year, current_year - 1)
+        coverage_rows = list_year_coverage(db_path, years=years)
+        if not coverage_rows:
+            empty = QLabel("No silver snapshots available yet.")
+            empty.setStyleSheet("color: #586a72;")
+            self.coverage_cards_layout.addWidget(empty)
+            self.coverage_cards_layout.addStretch(1)
+            return
+        for coverage in coverage_rows:
+            self.coverage_cards_layout.addWidget(self._coverage_card(coverage), 1)
+        self.coverage_cards_layout.addStretch(1)
+
     def _build_run_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -291,9 +544,23 @@ class MotoOperatorWindow(QMainWindow):
         controls = QGroupBox("Weekly Run Controls")
         controls_layout = QGridLayout(controls)
 
-        self.csv_path = QLineEdit(str(self.config.data_dir / "2026-03-10.csv"))
+        self.snapshot_date_input = SnapshotDateEdit()
+        self.snapshot_date_input.setCalendarPopup(True)
+        self.snapshot_date_input.setDisplayFormat("yyyy-MM-dd")
+        self.snapshot_date_input.setDate(QDate.currentDate())
+        self.snapshot_date_input.setButtonSymbols(QAbstractSpinBox.UpDownArrows)
+        self.snapshot_date_input.setKeyboardTracking(False)
+        self.snapshot_date_input.lineEdit().setReadOnly(True)
+        self.snapshot_date_input.dateChanged.connect(self._on_snapshot_date_changed)
+        self.csv_path = QLineEdit(str(self._staged_target_path()))
+        self.csv_path.setReadOnly(True)
+        self.csv_drop_zone = CsvDropZone()
+        self.csv_drop_zone.file_dropped.connect(self._try_set_csv_path)
         browse_button = QPushButton("Browse")
         browse_button.clicked.connect(self._browse_csv)
+        self.stage_button = QPushButton("Stage CSV to Intake")
+        self.stage_button.clicked.connect(self._stage_pending_source)
+        self.run_snapshot_selector = QComboBox()
         self.include_pdf = QCheckBox("Generate PDF outputs")
         self.include_pdf.setChecked(self.config.include_pdf_by_default)
         self.replace_snapshot = QCheckBox("Replace snapshot if it already exists")
@@ -301,14 +568,31 @@ class MotoOperatorWindow(QMainWindow):
         self.refresh_references = QCheckBox("Refresh reference data before run")
         self.start_button = QPushButton("Start Weekly Run")
         self.start_button.clicked.connect(self._start_run)
+        self.selected_source_label = QLabel("No file selected yet.")
+        self.selected_source_label.setWordWrap(True)
+        self.staged_name_label = QLabel(self._selected_snapshot_date() + ".csv")
+        self.staged_name_label.setWordWrap(True)
 
-        controls_layout.addWidget(QLabel("Weekly CSV"), 0, 0, 1, 2)
-        controls_layout.addWidget(self.csv_path, 1, 0)
-        controls_layout.addWidget(browse_button, 1, 1)
-        controls_layout.addWidget(self.include_pdf, 2, 0, 1, 2)
-        controls_layout.addWidget(self.replace_snapshot, 3, 0, 1, 2)
-        controls_layout.addWidget(self.refresh_references, 4, 0, 1, 2)
-        controls_layout.addWidget(self.start_button, 5, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(QLabel("1. Choose weekly CSV"), 0, 0, 1, 2)
+        controls_layout.addWidget(self.csv_drop_zone, 1, 0, 1, 2)
+        controls_layout.addWidget(QLabel("Snapshot date for staging"), 2, 0, 1, 2)
+        controls_layout.addWidget(self.snapshot_date_input, 3, 0, 1, 1, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(QLabel("Pending source file"), 4, 0, 1, 2)
+        controls_layout.addWidget(self.selected_source_label, 5, 0, 1, 2)
+        controls_layout.addWidget(QLabel("Staged filename"), 6, 0, 1, 2)
+        controls_layout.addWidget(self.staged_name_label, 7, 0, 1, 2)
+        controls_layout.addWidget(QLabel("Staged intake path"), 8, 0, 1, 2)
+        controls_layout.addWidget(self.csv_path, 9, 0)
+        controls_layout.addWidget(browse_button, 9, 1)
+        controls_layout.addWidget(self.stage_button, 10, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(QLabel("2. Select staged snapshot to run"), 11, 0, 1, 2)
+        controls_layout.addWidget(self.run_snapshot_selector, 12, 0, 1, 2)
+        controls_layout.addWidget(self.include_pdf, 13, 0, 1, 2)
+        controls_layout.addWidget(self.replace_snapshot, 14, 0, 1, 2)
+        controls_layout.addWidget(self.refresh_references, 15, 0, 1, 2)
+        controls_layout.addWidget(self.start_button, 16, 0, 1, 2, alignment=Qt.AlignLeft)
+
+        self._refresh_staged_snapshots()
 
         status = QGroupBox("Live Run Status")
         status_layout = QGridLayout(status)
@@ -362,25 +646,36 @@ class MotoOperatorWindow(QMainWindow):
         layout = QVBoxLayout(tab)
 
         controls = QHBoxLayout()
-        title = QLabel("Latest Outputs")
+        title = QLabel("Outputs by Report")
         title_font = QFont()
         title_font.setBold(True)
         title.setFont(title_font)
         controls.addWidget(title)
+        controls.addSpacing(12)
+        controls.addWidget(QLabel("Report"))
+        self.report_selector = QComboBox()
+        for report_type, label in REPORT_OPTIONS:
+            self.report_selector.addItem(label, report_type)
+        self.report_selector.currentIndexChanged.connect(self._refresh_outputs_view)
+        self.report_selector.setMaxVisibleItems(len(REPORT_OPTIONS))
+        controls.addWidget(self.report_selector)
         controls.addStretch(1)
+        open_excel = QPushButton("Open Excel Folder")
+        open_excel.clicked.connect(self._open_selected_excel_folder)
+        controls.addWidget(open_excel)
         open_reports = QPushButton("Open Reports Folder")
-        open_reports.clicked.connect(lambda: self._open_path(self.config.reports_dir))
+        open_reports.clicked.connect(self._open_selected_report_folder)
         controls.addWidget(open_reports)
         layout.addLayout(controls)
 
-        group = QGroupBox("Generated Reports")
+        group = QGroupBox("Generated Files")
         group_layout = QVBoxLayout(group)
-        self.outputs_table = QTableWidget(0, 5)
-        self.outputs_table.setHorizontalHeaderLabels(["Generated", "Report", "Format", "Snapshot", "Path"])
+        self.outputs_table = QTableWidget(0, 4)
+        self.outputs_table.setHorizontalHeaderLabels(["Generated", "Format", "Snapshot", "Path"])
         self._configure_table(
             self.outputs_table,
             stretch_last=True,
-            widths=[160, 130, 80, 110, 520],
+            widths=[180, 90, 110, 620],
         )
         group_layout.addWidget(self.outputs_table)
         open_selected = QPushButton("Open Selected Output")
@@ -429,20 +724,120 @@ class MotoOperatorWindow(QMainWindow):
             "CSV files (*.csv);;All files (*.*)",
         )
         if selected:
-            self.csv_path.setText(selected)
+            self._try_set_csv_path(selected)
+
+    def _try_set_csv_path(self, path: str) -> None:
+        try:
+            self.pending_source_file = Path(path)
+            if self.selected_source_label is not None:
+                self.selected_source_label.setText(self.pending_source_file.name)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                APP_TITLE,
+                f"Could not stage the selected CSV for intake.\n\n{operator_message_for_exception(exc)}",
+            )
+
+    def _set_csv_path(self, path: str) -> None:
+        self.csv_path.setText(path)
+
+    def _on_snapshot_date_changed(self) -> None:
+        if self.staged_name_label is not None:
+            self.staged_name_label.setText(self._staged_target_path().name)
+        self._set_csv_path(str(self._staged_target_path()))
+
+    def _selected_snapshot_date(self) -> str:
+        return self.snapshot_date_input.date().toString("yyyy-MM-dd")
+
+    def _staged_target_path(self) -> Path:
+        return self.config.intake_dir / f"{self._selected_snapshot_date()}.csv"
+
+    def _stage_pending_source(self) -> None:
+        if self.pending_source_file is None:
+            QMessageBox.critical(
+                self,
+                APP_TITLE,
+                "Select or drop a weekly CSV before staging it into intake.",
+            )
+            return
+        try:
+            staged_path = self._stage_source_file(self.pending_source_file)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                APP_TITLE,
+                f"Could not stage the selected CSV for intake.\n\n{operator_message_for_exception(exc)}",
+            )
+            return
+        self.csv_path.setText(str(staged_path))
+        self._refresh_staged_snapshots(select_snapshot=staged_path.stem)
+        if self.selected_source_label is not None:
+            self.selected_source_label.setText(f"{self.pending_source_file.name} staged as {staged_path.name}")
+
+    def _stage_source_file(self, source_path: Path) -> Path:
+        if not source_path.exists():
+            raise FileNotFoundError(source_path)
+        if source_path.suffix.lower() != ".csv":
+            raise ValueError("The selected file is not a CSV. Choose a .csv export before starting the run.")
+        self.config.intake_dir.mkdir(parents=True, exist_ok=True)
+        target_path = self._staged_target_path()
+        resolved_source = source_path.resolve()
+        resolved_target = target_path.resolve()
+        if resolved_source == resolved_target:
+            return target_path
+        if target_path.exists():
+            target_path.unlink()
+        if source_path.parent == self.config.intake_dir and source_path.exists():
+            shutil.move(str(source_path), str(target_path))
+            return target_path
+        shutil.copy2(source_path, target_path)
+        return target_path
+
+    def _refresh_staged_snapshots(self, select_snapshot: str | None = None) -> None:
+        current_snapshot = select_snapshot or self.run_snapshot_selector.currentText()
+        self.run_snapshot_selector.blockSignals(True)
+        self.run_snapshot_selector.clear()
+        staged_files = sorted(self.config.intake_dir.glob("*.csv"), reverse=True)
+        for staged_file in staged_files:
+            self.run_snapshot_selector.addItem(staged_file.stem, str(staged_file))
+        if current_snapshot:
+            index = self.run_snapshot_selector.findText(current_snapshot)
+            if index >= 0:
+                self.run_snapshot_selector.setCurrentIndex(index)
+        self.run_snapshot_selector.blockSignals(False)
 
     def _start_run(self) -> None:
         if self.worker is not None and self.worker.isRunning():
             QMessageBox.information(self, APP_TITLE, "A run is already in progress.")
             return
 
-        source_file = Path(self.csv_path.text().strip())
-        if not source_file.exists():
-            QMessageBox.critical(self, APP_TITLE, "The selected weekly CSV does not exist.")
+        source_path_text = self.run_snapshot_selector.currentData()
+        if not source_path_text:
+            QMessageBox.critical(
+                self,
+                APP_TITLE,
+                "Stage a CSV first, then choose the staged snapshot you want to run.",
+            )
             return
+        source_file = Path(str(source_path_text))
+        if not source_file.exists():
+            QMessageBox.critical(
+                self,
+                APP_TITLE,
+                "The selected staged snapshot file does not exist. Stage the CSV again or choose another staged snapshot.",
+            )
+            return
+        db_path = self.config.database_dir / "moto_pipeline_tmp.db"
+        if not self.replace_snapshot.isChecked():
+            duplicate_message = duplicate_snapshot_message(db_path, source_file)
+            if duplicate_message is not None:
+                QMessageBox.information(self, APP_TITLE, duplicate_message)
+                return
 
         self.start_button.setEnabled(False)
-        self.run_summary.setText("Run started. Waiting for backend progress...")
+        self.run_summary.setText(
+            f"Run started for snapshot {source_file.stem} from staged intake file {source_file.name}. Waiting for backend progress..."
+        )
         self.worker = RunWorker(
             config=self.config,
             source_file=source_file,
@@ -469,18 +864,21 @@ class MotoOperatorWindow(QMainWindow):
 
     def _refresh_all(self) -> None:
         db_path = self.config.database_dir / "moto_pipeline_tmp.db"
+        self._refresh_staged_snapshots()
         self._refresh_home(db_path)
         self._refresh_history(db_path)
-        self._refresh_outputs(db_path)
+        self._refresh_outputs_view()
         self._refresh_run_panel(db_path)
 
     def _refresh_home(self, db_path: Path) -> None:
         status = latest_run_status(db_path)
+        self.home_status_card.setText(status.status or "No runs yet")
         self.home_status.setText(status.status or "No runs yet")
         self.home_snapshot.setText(status.snapshot_date or "-")
         self.home_error.setText(status.error_message or "-")
         self.home_history_count.setText(str(len(list_runs(db_path, limit=20))))
         self.home_outputs_count.setText(str(len(list_generated_reports(db_path, limit=20))))
+        self._refresh_home_coverage(db_path)
         if status.run_id:
             log_path = self.config.logs_dir / f"{status.run_id}.log"
             if log_path.exists():
@@ -504,13 +902,14 @@ class MotoOperatorWindow(QMainWindow):
             for col, value in enumerate(values):
                 self.history_table.setItem(idx, col, QTableWidgetItem(str(value)))
 
-    def _refresh_outputs(self, db_path: Path) -> None:
-        rows = list_generated_reports(db_path, limit=20)
+    def _refresh_outputs_view(self) -> None:
+        db_path = self.config.database_dir / "moto_pipeline_tmp.db"
+        report_type = self.report_selector.currentData()
+        rows = list_current_generated_reports(db_path, report_type=report_type)
         self.outputs_table.setRowCount(len(rows))
         for idx, report in enumerate(rows):
             values = [
                 report.generated_at_utc,
-                report.report_type,
                 report.format,
                 report.snapshot_date or "-",
                 str(report.output_path),
@@ -552,10 +951,22 @@ class MotoOperatorWindow(QMainWindow):
         if selected < 0:
             QMessageBox.information(self, APP_TITLE, "Select an output first.")
             return
-        item = self.outputs_table.item(selected, 4)
+        item = self.outputs_table.item(selected, 3)
         if item is None:
             return
         self._open_path(Path(item.text()))
+
+    def _selected_report_type(self) -> str:
+        return str(self.report_selector.currentData())
+
+    def _selected_report_root(self) -> Path:
+        return self.config.reports_dir / REPORT_SLUGS[self._selected_report_type()]
+
+    def _open_selected_excel_folder(self) -> None:
+        self._open_path(self._selected_report_root() / "excel")
+
+    def _open_selected_report_folder(self) -> None:
+        self._open_path(self._selected_report_root() / "reports")
 
     def _open_path(self, path: Path) -> None:
         if not path.exists():

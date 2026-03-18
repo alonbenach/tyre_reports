@@ -10,6 +10,7 @@ from pathlib import Path
 class AppConfig:
     app_root: Path
     data_dir: Path
+    intake_dir: Path
     raw_archive_dir: Path
     database_dir: Path
     database_path: Path
@@ -36,6 +37,7 @@ def default_config(app_root: Path | None = None) -> AppConfig:
     return AppConfig(
         app_root=root,
         data_dir=root / "data",
+        intake_dir=root / "data" / "ingest",
         raw_archive_dir=root / "data" / "raw",
         database_dir=database_dir,
         database_path=database_dir / "moto_pipeline.db",
@@ -52,6 +54,7 @@ def default_config(app_root: Path | None = None) -> AppConfig:
 def ensure_runtime_dirs(config: AppConfig) -> None:
     for path in [
         config.data_dir,
+        config.intake_dir,
         config.raw_archive_dir,
         config.database_dir,
         config.reports_dir,

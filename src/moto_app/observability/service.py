@@ -52,6 +52,14 @@ class LatestRunStatus:
     error_message: str | None
 
 
+@dataclass(frozen=True)
+class YearCoverage:
+    iso_year: int
+    weeks_present: tuple[int, ...]
+    latest_week: int
+    coverage_percent: int
+
+
 def _file_sha256(file_path: Path | None) -> str | None:
     if file_path is None or not file_path.exists():
         return None
@@ -245,3 +253,39 @@ def latest_run_status(db_path: Path) -> LatestRunStatus:
         run_finished_at_utc=row[4],
         error_message=row[5],
     )
+
+
+def list_year_coverage(db_path: Path, *, years: tuple[int, ...]) -> list[YearCoverage]:
+    if not years:
+        return []
+    placeholders = ", ".join("?" for _ in years)
+    with connect_sqlite(db_path) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT iso_year, iso_week
+            FROM silver_motorcycle_weekly
+            WHERE iso_year IN ({placeholders})
+            GROUP BY iso_year, iso_week
+            ORDER BY iso_year DESC, iso_week ASC
+            """,
+            years,
+        ).fetchall()
+    weeks_by_year: dict[int, list[int]] = {year: [] for year in years}
+    for iso_year, iso_week in rows:
+        if iso_year is None or iso_week is None:
+            continue
+        weeks_by_year.setdefault(int(iso_year), []).append(int(iso_week))
+    coverage: list[YearCoverage] = []
+    for year in years:
+        weeks = sorted(set(weeks_by_year.get(year, [])))
+        if not weeks:
+            continue
+        coverage.append(
+            YearCoverage(
+                iso_year=year,
+                weeks_present=tuple(weeks),
+                latest_week=max(weeks),
+                coverage_percent=round((len(weeks) / 52) * 100),
+            )
+        )
+    return coverage

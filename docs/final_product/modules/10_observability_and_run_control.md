@@ -33,11 +33,13 @@ This module is part of the backend/application layer.
 - text and structured logs
 - operator-readable error messages
 - support and debug diagnostics
+- expose DB coverage summaries for operator-facing status screens
 
 ## Communication With Other Modules
 
 - receives events from `app_shell`, `ingestion`, `transformation`, `reporting_marts`, `exports`, and `reference_data`
 - exposes current run state to `operator_ui`
+- exposes current DB coverage state to `operator_ui`
 - persists metadata through `storage_and_migrations`
 
 ## Layer Boundary

@@ -86,6 +86,24 @@ class IngestionResult:
     duplicate_policy: str
 
 
+def duplicate_snapshot_message(db_path: Path, source_file: Path) -> str | None:
+    snapshot_date = _parse_snapshot_date(source_file)
+    source_sha256 = _file_sha256(source_file)
+    with connect_sqlite(db_path) as connection:
+        exists, existing_sha256 = _existing_snapshot_info(connection, snapshot_date)
+    if not exists:
+        return None
+    if existing_sha256 == source_sha256:
+        return (
+            f"Snapshot {snapshot_date} is already loaded from the same CSV. "
+            "Enable 'Replace snapshot if it already exists' only if you intentionally want to rebuild that week."
+        )
+    return (
+        f"Snapshot {snapshot_date} already exists in the database. "
+        "Enable 'Replace snapshot if it already exists' to rebuild that week with the selected staged file."
+    )
+
+
 def _file_sha256(file_path: Path) -> str:
     digest = hashlib.sha256()
     with file_path.open("rb") as handle:

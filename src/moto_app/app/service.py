@@ -47,6 +47,15 @@ def run_weekly_pipeline(
     try:
         stage_durations: dict[str, float] = {}
         stage_summaries: dict[str, str] = {}
+        tracker.log_step(
+            context,
+            "run_options",
+            (
+                f"Source file={source_file.name}, snapshot={snapshot_date}, "
+                f"replace_snapshot={replace_snapshot}, include_pdf={include_pdf}, "
+                f"refresh_references={refresh_references}"
+            ),
+        )
         if refresh_references:
             step_started = perf_counter()
             if reference_dir is None:
@@ -107,6 +116,7 @@ def run_weekly_pipeline(
             report_dir=report_dir,
             run_id=context.run_id,
             include_pdf=include_pdf,
+            snapshot_date=ingest_result.snapshot_date,
         )
         generated_files.extend(positioning_result.generated_files)
         offeror_result: ExportResult = export_offeror_focus_reports(
@@ -114,6 +124,7 @@ def run_weekly_pipeline(
             report_dir=report_dir,
             run_id=context.run_id,
             include_pdf=include_pdf,
+            snapshot_date=ingest_result.snapshot_date,
         )
         generated_files.extend(offeror_result.generated_files)
         stage_durations["exports"] = round(perf_counter() - step_started, 2)

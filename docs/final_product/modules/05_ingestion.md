@@ -17,6 +17,8 @@ This module is part of the backend/application layer.
 
 - source file selection
 - filename and snapshot-date handling
+- operator-selected snapshot date and intake renaming
+- explicit staging into intake before the run step
 - column validation
 - duplicate snapshot detection
 - raw archive creation
@@ -30,6 +32,7 @@ This module is part of the backend/application layer.
 
 ## Outputs
 
+- staged operator-selected CSV in the app intake folder
 - archived raw file on disk
 - `source_imports` metadata
 - staged motorcycle source rows in SQLite
@@ -51,6 +54,7 @@ This module is part of the backend/application layer.
 ## Key Design Constraints
 
 - raw source files should remain immutable after archival
+- operator-provided source files may be copied into a controlled intake folder before archival
 - duplicate imports must be handled predictably
 - source validation errors must be translated into operator-safe language
 
@@ -65,6 +69,7 @@ This module is part of the backend/application layer.
 
 - Weekly runs are manually triggered in phase 1.
 - Source ingestion remains CSV-based from `platformaopon.pl`.
+- Operator-provided CSV files may be staged into `data/ingest/` before the backend run starts.
 - Raw source files will continue to be archived as immutable snapshots under `data/raw/snapshot_date=YYYY-MM-DD/source.csv`.
 - Ingestion metadata will move from `ingestion_log.csv` into SQLite-backed metadata tables.
 - The ingestion layer will validate the input file before writing stage data.
@@ -78,6 +83,7 @@ The ingestion layer should validate at least:
 - file exists and is readable
 - file extension is `.csv`
 - filename or selected snapshot date resolves to a valid weekly snapshot token
+- UI-selected snapshot date can override a malformed download name by renaming the staged intake file
 - all required source columns are present
 - file encoding can be read with tolerant decoding
 - snapshot duplication is checked before archival and stage writes continue
@@ -114,3 +120,4 @@ src/
 - [x] define the staging-table schema for motorcycle source rows
 - [x] implement CSV-to-stage loading flow
 - [x] expose ingest outcomes in operator-safe terms
+- [x] support UI-driven intake renaming based on operator-selected snapshot date
