@@ -12,6 +12,10 @@ The goal is consistency:
 Local Codex note:
 
 - a matching local Codex skill named `moto-dev-workflow` is installed on this machine
+- additional local workflow skills are also installed:
+  - `moto-access-control`
+  - `moto-dev-prod-runtime`
+  - `moto-snapshot-discipline`
 - the skill is the agent-facing version of this document
 - this markdown file remains the human-facing source of truth inside the repo
 
