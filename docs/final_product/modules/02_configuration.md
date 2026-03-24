@@ -68,6 +68,7 @@ This module is part of the backend/application layer.
 - Log files should live under a dedicated logs directory, planned as `logs/`.
 - The configuration layer will expose both backend-facing settings and a reduced set of frontend-safe display paths.
 - Phase-1 configuration is implemented in `src/moto_app/config/service.py` with a typed `AppConfig`, development runtime detection, directory bootstrap, and optional JSON override loading.
+- Going forward, configuration should support explicit development and production runtime contexts without forking core business logic.
 
 ## Planned Path Layout
 
@@ -84,6 +85,13 @@ reports/
 logs/
 assets/
 ```
+
+Planned environment direction:
+
+- `dev`
+  - local repo-oriented runtime paths
+- `prod`
+  - packaged/shared-drive runtime paths with components kept close together for operator convenience
 
 Planned backend package layout:
 
@@ -114,6 +122,7 @@ The configuration object should expose at least:
 
 - exact packaged user-data location on Windows
 - whether logs should be retained by count, age, or both
+- exact file names and override mechanics for `run_app_dev` and `run_app_prod`
 
 ## Task Checklist
 

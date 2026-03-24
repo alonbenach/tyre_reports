@@ -214,6 +214,14 @@ database/
 12. Access control and admin mode
 13. Environments and CI/CD
 
+Current planning direction for phase-4 work:
+
+- one repository and one codebase
+- explicit `dev` and `prod` environments
+- future work branched from `main`
+- CI-enforced tests before merges to `main`
+- packaged production runtime distributed from a shared-drive location
+
 ## Task Control Guidance
 
 Each module file under [`docs/final_product/modules`](/c:/Users/benacal001/Documents/projects/moto_analysis/docs/final_product/modules) includes a `Task Checklist` section. These checklists are intended to act as implementation tickets.

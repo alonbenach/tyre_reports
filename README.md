@@ -82,5 +82,22 @@ python scripts/generate_offeror_focus.py --skip-pdf
   - `data/gold/gold_recap_by_brand_weekly.csv`
   - `data/gold/gold_recap_by_brand_latest.csv`
 - Commit hygiene:
-  - `.gitignore` excludes all source data, campaign files, snapshots, generated reports, and instructions.
-  - Only pipeline code/architecture and docs should be committed.
+  - `.gitignore` excludes source data, campaign files, generated reports, and operator runtime artifacts.
+  - Test fixtures and committed snapshots under `tests/` are intentionally versioned as part of CI.
+
+## Quality Gates
+
+Local development checks:
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m pytest
+```
+
+To intentionally refresh committed test snapshots after a reviewed output change:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_snapshot_pipeline.py --update-snapshots
+```
+
+CI runs the same lint + test gates through GitHub Actions before changes should be merged into `main`.

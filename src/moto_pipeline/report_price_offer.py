@@ -1530,8 +1530,6 @@ def build_pdf_report(
     try:
         import matplotlib.pyplot as plt
         from matplotlib.backends.backend_pdf import PdfPages
-        from matplotlib.gridspec import GridSpec
-        from matplotlib.ticker import MaxNLocator
     except Exception as exc:  # pragma: no cover
         logger.warning("Skipping PDF generation (matplotlib unavailable): %s", exc)
         return None

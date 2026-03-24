@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+addopts = "-ra -p no:cacheprovider"
+norecursedirs = ["database/_test_work", "tests/pytest-cache-files-*", "tests/.pytest_cache", "tests/.tmp"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+extend-exclude = ["notebooks", "tests/.pytest_cache", "tests/.tmp", "tests/pytest-cache-files-*"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]

@@ -48,6 +48,10 @@ def pattern_family(name_col: pd.Series) -> pd.Series:
     return (tokens[0] + " " + tokens[1] + " " + tokens[2]).str.strip()
 
 
+def current_utc_year() -> int:
+    return int(pd.Timestamp.now(tz="UTC").year)
+
+
 @dataclass(frozen=True)
 class SilverBuildResult:
     db_path: Path
@@ -182,8 +186,7 @@ def _build_silver_frame(stage_df: pd.DataFrame, canonical_ref: pd.DataFrame, all
         return pd.DataFrame()
 
     moto = stage_df.copy()
-    total_moto_rows = len(moto)
-    current_year = int(pd.Timestamp.now().year)
+    current_year = current_utc_year()
     allowed_production_years = {current_year, current_year - 1}
 
     moto["production_year"] = pd.to_numeric(moto["productionYear"], errors="coerce").astype("Int64")

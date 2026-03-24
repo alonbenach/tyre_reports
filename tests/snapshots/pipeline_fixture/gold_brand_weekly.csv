@@ -1,0 +1,5 @@
+snapshot_date,brand,rows,unique_products,unique_sellers,stock_qty,median_price,mean_price
+2026-02-10,Bridgestone,2,2,2,7.000000,638.990000,638.990000
+2026-02-10,Dunlop,1,1,1,8.000000,463.280000,463.280000
+2026-02-10,Michelin,4,4,1,47.000000,377.000000,347.400000
+2026-02-10,Pirelli,1,1,1,2.000000,563.000000,563.000000

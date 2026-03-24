@@ -12,7 +12,6 @@ import pandas as pd
 from moto_app.db.runtime import connect_sqlite
 from moto_app.observability import OperatorFacingError
 from moto_pipeline.canonical import (
-    extract_size_root,
     load_campaign_customer_discounts,
     load_canonical_mapping,
     load_price_list,

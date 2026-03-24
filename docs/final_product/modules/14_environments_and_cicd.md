@@ -68,6 +68,11 @@ This module is cross-cutting and applies to engineering workflow rather than a s
 - The production app will be distributed from a shared-drive location with runtime components kept close together for convenience.
 - CI/CD should enforce automated tests before merges to `main`.
 - The project needs a blueprint `.md` file before CI/CD implementation proceeds.
+- There will be one repository and one codebase, not separate development and production apps.
+- Development and production will differ by environment configuration, runtime paths, launch entrypoints, and release rules rather than by business logic.
+- The app should have separate environment launchers, conceptually `run_app_dev` and `run_app_prod`, both targeting the same application code.
+- Future work should branch from `main`.
+- Changes should reach `main` through pull requests rather than direct feature development on `main`.
 
 ## Planned Environment Model
 
@@ -77,24 +82,123 @@ Development:
 - editable source tree
 - developer-oriented config overrides
 - test DBs and temp artifacts separated from production runtime assets
+- local dev launcher such as `run_app_dev`
+- safe-to-break environment for experimentation and iterative changes
 
 Production:
 
 - packaged app launched from shared-drive location
 - shared runtime area containing executable, DB, logs, reports, intake, and related assets close together
 - restricted operational behavior with single-user writable session rules
+- production launcher such as `run_app_prod`
+- conservative runtime behavior intended for non-technical operators
+
+## Environment Separation Rules
+
+The planned split is:
+
+- one repository
+- one codebase
+- one application logic path
+- two runtime environments
+
+What may differ between `dev` and `prod`:
+
+- database file location
+- intake folder
+- raw archive location
+- reports folder
+- logs folder
+- config override source
+- safety restrictions and feature flags
+- packaging/distribution behavior
+
+What should not differ between `dev` and `prod`:
+
+- transformation rules
+- report calculation logic
+- SQL schema intent
+- report family behavior
+
+This rule exists so development can continue safely without creating two drifting versions of the app.
+
+## Launcher Strategy
+
+Planned environment entrypoint model:
+
+- `run_app_dev`
+  - launches the app against development-oriented paths and settings
+- `run_app_prod`
+  - launches the app against production/shared-drive paths and settings
+
+These may later be implemented as:
+
+- separate scripts
+- separate shortcuts
+- separate packaged launchers
+- or a single launcher with an explicit environment flag
+
+The important point is that environment selection should be explicit and predictable.
 
 ## Planned CI/CD Model
 
 Proposed baseline:
 
-- feature branches
-- pull requests into `main`
-- CI runs on each pull request
+- feature branches created from `main`
+- pull requests targeting `main`
+- CI runs on each pull request to `main`
 - required checks before merge:
   - automated tests
+  - environment/setup sanity checks
   - backend parity/regression checks where practical
   - packaging smoke checks later
+
+## Branch and Merge Policy
+
+Recommended working policy:
+
+- `main` is the stable integration branch
+- new work starts from short-lived feature branches
+- pull requests are required for changes into `main`
+- direct commits to `main` should be avoided once CI enforcement is active
+- merge should only be allowed when required checks pass
+
+Suggested branch naming examples:
+
+- `feature/access-control`
+- `feature/admin-mode`
+- `feature/cicd-foundation`
+- `fix/output-browser`
+
+## Minimum CI Gate for Phase 1
+
+The first useful CI gate should be intentionally small and reliable.
+
+Implemented initial required checks:
+
+1. install dependencies successfully
+2. run `ruff` as the lint gate
+3. run `pytest`
+4. fail the push / pull request if either check fails
+
+Current implementation choices:
+
+- CI provider: GitHub Actions
+- workflow file: `.github/workflows/ci.yml`
+- runtime dependencies stay in `requirements.txt`
+- development-only tooling is installed from `requirements-dev.txt`
+- snapshot baselines are committed and updated only through the local `--update-snapshots` workflow
+
+This initial gate is more valuable than a larger but unreliable CI design.
+
+## Planned CI Expansion After Phase 1
+
+After the basic test gate is working, CI can expand to include:
+
+- parity checks for key backend/report behaviors
+- packaging smoke tests
+- possibly lint/format checks if you decide they add value
+- release artifact creation on tagged versions or release branches
 
 Release path:
 
@@ -103,18 +207,42 @@ Release path:
 - validate on staging/test runtime location
 - promote build to shared-drive production location
 
+## Packaging and Promotion Model
+
+Recommended promotion sequence:
+
+1. develop and test on `dev`
+2. merge approved changes into `main`
+3. build a production package from `main`
+4. validate that package in a non-production runtime location
+5. copy/promote the approved package into the shared-drive production location
+
+This keeps production tied to a known reviewed state rather than an active development folder.
+
+## Rollback Direction
+
+If a packaged build is bad, the preferred rollback model should be:
+
+- keep the prior good production package/version available
+- restore the prior package
+- preserve production DB and logs unless the issue requires explicit data rollback
+- document what version was rolled back and why
+
 ## Remaining Open Decisions
 
-- exact CI provider and workflow file location
 - whether packaging is built on every merge or only on tagged releases
 - whether production uses a dedicated staging shared folder before promotion
+- exact launcher files for `dev` and `prod`
 
 ## Task Checklist
 
-- [ ] define dev vs prod runtime path behavior in detail
-- [ ] define config override policy for development without risking production runtime data
-- [ ] define branch, PR, and merge policy
-- [ ] define mandatory automated test gates before merge to `main`
-- [ ] define packaging/release workflow from `main` to shared-drive deployment
-- [ ] define rollback procedure for a bad production package
-- [ ] write CI workflow blueprint for future implementation
+- [x] define dev vs prod runtime path behavior in detail
+- [x] define config override policy for development without risking production runtime data
+- [x] define branch, PR, and merge policy
+- [x] define mandatory automated test gates before merge to `main`
+- [x] define packaging/release workflow from `main` to shared-drive deployment
+- [x] define rollback procedure for a bad production package
+- [x] write CI workflow blueprint for future implementation
+- [x] choose CI provider and initial workflow file layout
+- [x] define dependency-group strategy for runtime vs development tooling
+- [ ] define exact dev and prod launcher/entrypoint files

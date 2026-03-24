@@ -81,6 +81,17 @@ Implemented assets:
 - parity helper module in `src/moto_app/testing/parity.py`
 - manual parity tool in `database/tools/check_parity.py`
 - integration test suite in `tests/test_backend_pipeline.py`
+- snapshot fixture in `tests/fixtures/2026-02-10_sample.csv`
+- snapshot helper utilities in `tests/conftest.py` and `tests/snapshot_utils.py`
+- snapshot regression test in `tests/test_snapshot_pipeline.py`
+- committed baseline snapshots under `tests/snapshots/`
+
+Current automated quality flow:
+
+- `ruff` runs as the first lint gate
+- `pytest` runs the backend smoke tests and the snapshot regression test
+- intentional snapshot changes are updated locally with:
+  - `python -m pytest tests/test_snapshot_pipeline.py --update-snapshots`
 
 ## Task Checklist
 
@@ -89,5 +100,6 @@ Implemented assets:
 - [x] add tests for ingestion, transformation, marts, and exports
 - [x] define representative fixtures and sample-run datasets
 - [x] create a regression checklist for report generation
+- [x] add committed snapshot baselines and a controlled snapshot update workflow
 - [ ] define smoke coverage for operator workflows
 - [x] document release-readiness gates before packaging

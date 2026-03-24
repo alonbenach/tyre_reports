@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
 
 from .ingest import ingest_all_weekly_csv
 from .marts import build_gold_marts
