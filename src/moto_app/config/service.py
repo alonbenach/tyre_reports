@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 import json
 import sys
 from dataclasses import asdict, dataclass
@@ -18,9 +19,13 @@ class AppConfig:
     logs_dir: Path
     assets_dir: Path
     reference_source_dir: Path
+    session_lock_path: Path
     default_report_mode: str
     include_pdf_by_default: bool
     runtime_mode: str
+    admin_users: tuple[str, ...]
+    lock_heartbeat_seconds: int
+    lock_stale_seconds: int
 
 
 def _default_root() -> Path:
@@ -45,9 +50,13 @@ def default_config(app_root: Path | None = None) -> AppConfig:
         logs_dir=root / "logs",
         assets_dir=root / "assets",
         reference_source_dir=root / "data" / "campaign rules",
+        session_lock_path=database_dir / "session.lock",
         default_report_mode="excel",
         include_pdf_by_default=False,
         runtime_mode=detect_runtime_mode(),
+        admin_users=(getpass.getuser(),),
+        lock_heartbeat_seconds=15,
+        lock_stale_seconds=300,
     )
 
 

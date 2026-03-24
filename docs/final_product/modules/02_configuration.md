@@ -114,9 +114,13 @@ The configuration object should expose at least:
 - logs directory
 - assets directory
 - reference source directory
+- session lock path
 - default report mode
 - default PDF behavior
 - development vs packaged runtime mode
+- admin-user allowlist
+- lock heartbeat interval
+- stale-lock timeout
 
 ## Remaining Open Decisions
 
