@@ -35,6 +35,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from moto_app.access_control import (
+    AccessSession,
+    acquire_access_session,
+    evaluate_access,
+    refresh_access_heartbeat,
+    release_access_session,
+)
 from moto_app.app import run_weekly_pipeline
 from moto_app.config import AppConfig, ensure_runtime_dirs, load_config
 from moto_app.exports import list_current_generated_reports, list_generated_reports
@@ -150,6 +157,7 @@ class MotoOperatorWindow(QMainWindow):
         super().__init__()
         self.config = config
         self.worker: RunWorker | None = None
+        self.access_session: AccessSession | None = None
         self.last_log_path: Path | None = None
         self.pending_source_file: Path | None = None
         self.selected_source_label: QLabel | None = None
@@ -161,11 +169,15 @@ class MotoOperatorWindow(QMainWindow):
         self.setMinimumSize(1080, 700)
         self._apply_palette()
         self._build_ui()
+        self._initialize_access_mode()
         self._refresh_all()
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._refresh_all)
         self.timer.start(1500)
+        self.lock_timer = QTimer(self)
+        self.lock_timer.timeout.connect(self._refresh_access_heartbeat)
+        self.lock_timer.start(self.config.lock_heartbeat_seconds * 1000)
 
     def _apply_palette(self) -> None:
         palette = self.palette()
@@ -390,6 +402,13 @@ class MotoOperatorWindow(QMainWindow):
         subtitle.setStyleSheet("color: #586a72;")
         layout.addWidget(subtitle)
 
+        self.access_banner = QLabel("")
+        self.access_banner.setWordWrap(True)
+        self.access_banner.setStyleSheet(
+            "background: #dff1ee; border: 1px solid #b8ddd6; border-radius: 10px; padding: 10px 12px; color: #12424a; font-weight: 600;"
+        )
+        layout.addWidget(self.access_banner)
+
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs, 1)
 
@@ -556,8 +575,8 @@ class MotoOperatorWindow(QMainWindow):
         self.csv_path.setReadOnly(True)
         self.csv_drop_zone = CsvDropZone()
         self.csv_drop_zone.file_dropped.connect(self._try_set_csv_path)
-        browse_button = QPushButton("Browse")
-        browse_button.clicked.connect(self._browse_csv)
+        self.browse_button = QPushButton("Browse")
+        self.browse_button.clicked.connect(self._browse_csv)
         self.stage_button = QPushButton("Stage CSV to Intake")
         self.stage_button.clicked.connect(self._stage_pending_source)
         self.run_snapshot_selector = QComboBox()
@@ -583,7 +602,7 @@ class MotoOperatorWindow(QMainWindow):
         controls_layout.addWidget(self.staged_name_label, 7, 0, 1, 2)
         controls_layout.addWidget(QLabel("Staged intake path"), 8, 0, 1, 2)
         controls_layout.addWidget(self.csv_path, 9, 0)
-        controls_layout.addWidget(browse_button, 9, 1)
+        controls_layout.addWidget(self.browse_button, 9, 1)
         controls_layout.addWidget(self.stage_button, 10, 0, 1, 2, alignment=Qt.AlignLeft)
         controls_layout.addWidget(QLabel("2. Select staged snapshot to run"), 11, 0, 1, 2)
         controls_layout.addWidget(self.run_snapshot_selector, 12, 0, 1, 2)
@@ -624,6 +643,73 @@ class MotoOperatorWindow(QMainWindow):
         log_layout.addWidget(self.log_text)
         layout.addWidget(log_group, 1)
         return tab
+
+    def _initialize_access_mode(self) -> None:
+        evaluation = evaluate_access(self.config)
+        if evaluation.can_recover_stale_lock and evaluation.active_lock is not None:
+            answer = QMessageBox.question(
+                self,
+                APP_TITLE,
+                (
+                    "A stale writable session lock was found.\n\n"
+                    f"Owner: {evaluation.active_lock.user_name}@{evaluation.active_lock.machine_name}\n"
+                    f"Last heartbeat: {evaluation.active_lock.last_heartbeat_utc}\n\n"
+                    "Do you want to clear the stale lock and take the writable session?"
+                ),
+            )
+            self.access_session = acquire_access_session(
+                self.config,
+                recover_stale_lock=answer == QMessageBox.Yes,
+            )
+        else:
+            self.access_session = acquire_access_session(self.config)
+        self._apply_access_mode()
+
+    def _apply_access_mode(self) -> None:
+        session = self.access_session
+        if session is None:
+            return
+        if session.mode == "writable":
+            role = "Admin" if session.is_admin_user else "Operator"
+            self.access_banner.setStyleSheet(
+                "background: #dff1ee; border: 1px solid #b8ddd6; border-radius: 10px; padding: 10px 12px; color: #12424a; font-weight: 600;"
+            )
+            self.access_banner.setText(
+                f"{role} mode: writable session active for {session.user_name}@{session.machine_name}. {session.reason}"
+            )
+            self.setWindowTitle(APP_TITLE)
+        else:
+            owner = (
+                f"{session.active_lock.user_name}@{session.active_lock.machine_name}"
+                if session.active_lock is not None
+                else "unknown owner"
+            )
+            self.access_banner.setStyleSheet(
+                "background: #fff4df; border: 1px solid #e4c88f; border-radius: 10px; padding: 10px 12px; color: #6b4b12; font-weight: 600;"
+            )
+            self.access_banner.setText(
+                f"Read-only mode: {session.reason} Writable session owner: {owner}. Output viewing remains available, but staging and run actions are disabled."
+            )
+            self.setWindowTitle(f"{APP_TITLE} [Read-only]")
+
+        can_write = session.mode == "writable"
+        for widget in [
+            self.csv_drop_zone,
+            self.browse_button,
+            self.stage_button,
+            self.snapshot_date_input,
+            self.run_snapshot_selector,
+            self.include_pdf,
+            self.replace_snapshot,
+            self.refresh_references,
+            self.start_button,
+        ]:
+            widget.setEnabled(can_write)
+
+    def _refresh_access_heartbeat(self) -> None:
+        if self.access_session is None:
+            return
+        self.access_session = refresh_access_heartbeat(self.config, self.access_session)
 
     def _build_history_tab(self) -> QWidget:
         tab = QWidget()
@@ -973,6 +1059,11 @@ class MotoOperatorWindow(QMainWindow):
             QMessageBox.critical(self, APP_TITLE, f"Path does not exist:\n{path}")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self.access_session is not None:
+            release_access_session(self.config, self.access_session)
+        super().closeEvent(event)
 
 
 def launch_operator_ui(app_root: Path | None = None) -> None:

@@ -110,6 +110,8 @@ Current operator conveniences:
 - the outputs tab should show the current live files for the selected report, not every historical generation event
 - report-specific output browsing
 - direct opening of per-report `excel` and `reports` folders
+- startup access-mode handling backed by backend lock evaluation
+- read-only fallback mode with a visible banner and disabled staging/run controls
 
 ## Task Checklist
 
