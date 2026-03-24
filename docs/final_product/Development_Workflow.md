@@ -9,6 +9,12 @@ The goal is consistency:
 - push changes through the same CI gate
 - handle failures and correction cycles without improvising
 
+Local Codex note:
+
+- a matching local Codex skill named `moto-dev-workflow` is installed on this machine
+- the skill is the agent-facing version of this document
+- this markdown file remains the human-facing source of truth inside the repo
+
 ## Purpose
 
 Now that `main` is the default branch and GitHub Actions is active, we should treat `main` as the stable integration branch.
