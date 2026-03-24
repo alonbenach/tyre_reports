@@ -61,6 +61,7 @@ This module is cross-cutting and applies to engineering workflow rather than a s
 - CI workflow blueprint
 - merge gate policy
 - release workflow and rollback notes
+- developer branch / commit / push / correction workflow
 
 ## Locked Decisions
 
@@ -188,6 +189,7 @@ Current implementation choices:
 - runtime dependencies stay in `requirements.txt`
 - development-only tooling is installed from `requirements-dev.txt`
 - snapshot baselines are committed and updated only through the local `--update-snapshots` workflow
+- developer workflow guide lives in `docs/final_product/Development_Workflow.md`
 
 This initial gate is more valuable than a larger but unreliable CI design.
 
@@ -245,4 +247,5 @@ If a packaged build is bad, the preferred rollback model should be:
 - [x] write CI workflow blueprint for future implementation
 - [x] choose CI provider and initial workflow file layout
 - [x] define dependency-group strategy for runtime vs development tooling
+- [x] document the developer branch / commit / push / correction cycle
 - [ ] define exact dev and prod launcher/entrypoint files
