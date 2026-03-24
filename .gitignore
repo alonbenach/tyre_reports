@@ -35,5 +35,5 @@ assets/logos/*
 *.parquet
 *.pdf
 *.tsv
-!tests/fixtures/*.csv
+!tests/fixtures/**/*.csv
 !tests/snapshots/**/*.csv

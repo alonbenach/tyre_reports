@@ -11,14 +11,13 @@ from database.tools import DatabasePaths, initialize_database
 from moto_app.db.runtime import connect_sqlite
 from moto_app.ingest import ingest_weekly_csv
 from moto_app.marts import build_gold_marts
-from moto_app.reference_data import refresh_reference_data
 from moto_app.transform import build_silver_snapshot
+from tests.reference_seed import seed_reference_tables
 from tests.snapshot_utils import assert_frame_matches_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_CSV = ROOT / "tests" / "fixtures" / "2026-02-10_sample.csv"
-REFERENCE_DIR = ROOT / "data" / "campaign rules"
 MIGRATIONS_DIR = ROOT / "database" / "migrations"
 
 
@@ -38,7 +37,7 @@ def pipeline_snapshot_db(monkeypatch: pytest.MonkeyPatch) -> Path:
                 migrations_dir=MIGRATIONS_DIR,
             )
         )
-        refresh_reference_data(db_path=db_path, source_dir=REFERENCE_DIR)
+        seed_reference_tables(db_path)
 
         monkeypatch.setattr("moto_app.transform.service.current_utc_year", lambda: 2026)
 

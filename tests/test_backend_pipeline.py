@@ -19,11 +19,10 @@ from database.tools import DatabasePaths, initialize_database  # noqa: E402
 from moto_app.app import run_weekly_pipeline  # noqa: E402
 from moto_app.ingest import DuplicateSnapshotError  # noqa: E402
 from moto_app.observability import latest_run_status  # noqa: E402
-from moto_app.reference_data import refresh_reference_data  # noqa: E402
+from tests.reference_seed import seed_reference_tables  # noqa: E402
 
 
 FIXTURE_SOURCE = ROOT / "tests" / "fixtures" / "2026-02-10_sample.csv"
-REFERENCE_DIR = ROOT / "data" / "campaign rules"
 MIGRATIONS_DIR = ROOT / "database" / "migrations"
 
 
@@ -44,7 +43,7 @@ class BackendPipelineTests(unittest.TestCase):
                 migrations_dir=MIGRATIONS_DIR,
             )
         )
-        refresh_reference_data(db_path=db_path, source_dir=REFERENCE_DIR)
+        seed_reference_tables(db_path)
         return tmp_root, db_path, source_file, raw_dir, report_dir, log_dir
 
     def test_weekly_run_records_status_logs_and_outputs(self) -> None:
