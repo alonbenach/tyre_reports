@@ -5,6 +5,7 @@ This folder defines the planned module structure for the SQLite-backed motorcycl
 Long-form overview document:
 
 - [`Moto_Weekly_Operator_App_Overview.md`](/c:/Users/benacal001/Documents/projects/moto_analysis/docs/final_product/Moto_Weekly_Operator_App_Overview.md)
+- [`Development_Workflow.md`](/c:/Users/benacal001/Documents/projects/moto_analysis/docs/final_product/Development_Workflow.md)
 
 ## Target Product
 
