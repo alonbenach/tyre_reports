@@ -17,6 +17,7 @@ logs/
 # Database runtime artifacts
 database/*.db
 database/*.db-*
+database/session.lock
 database/_test_work/
 database/_export_work/
 database/__pycache__/
