@@ -16,11 +16,11 @@ from moto_app.observability import latest_run_status, operator_message_for_excep
 
 def main() -> None:
     try:
-        config = load_config(ROOT)
+        config = load_config(ROOT, environment="dev")
         ensure_runtime_dirs(config)
         result = run_weekly_pipeline(
-            db_path=config.database_dir / "moto_pipeline_tmp.db",
-            source_file=config.data_dir / "2026-03-10.csv",
+            db_path=config.database_path,
+            source_file=config.intake_dir / "2026-03-10.csv",
             raw_dir=config.raw_archive_dir,
             report_dir=config.reports_dir,
             log_dir=config.logs_dir,
@@ -43,7 +43,7 @@ def main() -> None:
         print("Generated files:")
         for path in result.generated_files:
             print(f"  {path}")
-        latest_run = latest_run_status(config.database_dir / "moto_pipeline_tmp.db")
+        latest_run = latest_run_status(config.database_path)
         print(f"Run status: {latest_run.status}")
         print(f"Run log: {config.logs_dir / (result.run_id + '.log')}")
     except Exception as exc:

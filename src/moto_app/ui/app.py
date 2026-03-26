@@ -1210,8 +1210,13 @@ class MotoOperatorWindow(QMainWindow):
         super().closeEvent(event)
 
 
-def launch_operator_ui(app_root: Path | None = None) -> None:
-    config = load_config(app_root)
+def launch_operator_ui(
+    app_root: Path | None = None,
+    *,
+    environment: str = "dev",
+    config_override_path: Path | None = None,
+) -> None:
+    config = load_config(app_root, environment=environment, config_override_path=config_override_path)
     ensure_runtime_dirs(config)
     app = QApplication.instance() or QApplication(sys.argv)
     window = MotoOperatorWindow(config)

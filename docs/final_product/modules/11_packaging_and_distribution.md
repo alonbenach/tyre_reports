@@ -68,6 +68,7 @@ This module is cross-cutting and applies after frontend, backend, and data layer
 - Production packaging should align with the planned `prod` environment rather than reusing the live development runtime directly.
 - The shared-drive production package should keep related runtime components close together for operator convenience.
 - Packaging should eventually align with explicit environment launchers such as `run_app_dev` and `run_app_prod`.
+- The current pre-packaging implementation models production runtime paths under `runtime/prod/` so the future shared-drive folder layout can be exercised before packaging is finalized.
 
 ## Task Checklist
 

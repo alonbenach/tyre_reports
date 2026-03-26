@@ -13,4 +13,4 @@ from moto_app.ui import launch_operator_ui  # noqa: E402
 
 
 if __name__ == "__main__":
-    launch_operator_ui(ROOT, environment="dev")
+    launch_operator_ui(ROOT, environment="prod")
