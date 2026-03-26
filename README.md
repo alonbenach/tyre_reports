@@ -67,6 +67,13 @@ Current application entry points:
 .\.venv\Scripts\python.exe database/tools/run_weekly.py
 ```
 
+Explicit environment launchers:
+
+```powershell
+.\.venv\Scripts\python.exe database/tools/run_app_dev.py
+.\.venv\Scripts\python.exe database/tools/run_app_prod.py
+```
+
 Database utilities:
 
 ```powershell

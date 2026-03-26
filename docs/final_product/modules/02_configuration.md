@@ -89,9 +89,10 @@ assets/
 Planned environment direction:
 
 - `dev`
-  - local repo-oriented runtime paths
+  - local repo-oriented runtime paths rooted at the repository
 - `prod`
   - packaged/shared-drive runtime paths with components kept close together for operator convenience
+  - currently modeled in code as `runtime/prod/` under the chosen base root so the packaged/shared-drive layout can be tested before final packaging
 
 Planned backend package layout:
 
@@ -118,6 +119,7 @@ The configuration object should expose at least:
 - default report mode
 - default PDF behavior
 - development vs packaged runtime mode
+- environment name (`dev` or `prod`)
 - admin-user allowlist
 - lock heartbeat interval
 - stale-lock timeout
@@ -126,7 +128,7 @@ The configuration object should expose at least:
 
 - exact packaged user-data location on Windows
 - whether logs should be retained by count, age, or both
-- exact file names and override mechanics for `run_app_dev` and `run_app_prod`
+- whether packaged `prod` should keep using the `runtime/prod/` shape directly or collapse one level when the executable is promoted to the shared drive
 
 ## Task Checklist
 
@@ -137,4 +139,5 @@ The configuration object should expose at least:
 - [x] document runtime settings exposed to backend and frontend
 - [x] define environment detection for development vs packaged runtime
 - [x] define path override policy for power users or support scenarios
+- [x] define exact `dev` and `prod` launcher/environment path mechanics for the current pre-packaging stage
 - [ ] define how packaged app builds resolve user-data locations

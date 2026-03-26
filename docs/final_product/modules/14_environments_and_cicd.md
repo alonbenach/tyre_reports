@@ -125,21 +125,21 @@ This rule exists so development can continue safely without creating two driftin
 
 ## Launcher Strategy
 
-Planned environment entrypoint model:
+Implemented phase-1 environment entrypoint model:
 
 - `run_app_dev`
   - launches the app against development-oriented paths and settings
 - `run_app_prod`
   - launches the app against production/shared-drive paths and settings
 
-These may later be implemented as:
+Current implementation files:
 
-- separate scripts
-- separate shortcuts
-- separate packaged launchers
-- or a single launcher with an explicit environment flag
+- `database/tools/run_app_dev.py`
+- `database/tools/run_app_prod.py`
 
-The important point is that environment selection should be explicit and predictable.
+`launch_ui.py` remains as a development-oriented compatibility launcher.
+
+The important point is that environment selection is now explicit and predictable.
 
 ## Planned CI/CD Model
 
@@ -234,7 +234,6 @@ If a packaged build is bad, the preferred rollback model should be:
 
 - whether packaging is built on every merge or only on tagged releases
 - whether production uses a dedicated staging shared folder before promotion
-- exact launcher files for `dev` and `prod`
 
 ## Task Checklist
 
@@ -248,4 +247,4 @@ If a packaged build is bad, the preferred rollback model should be:
 - [x] choose CI provider and initial workflow file layout
 - [x] define dependency-group strategy for runtime vs development tooling
 - [x] document the developer branch / commit / push / correction cycle
-- [ ] define exact dev and prod launcher/entrypoint files
+- [x] define exact dev and prod launcher/entrypoint files

@@ -240,7 +240,8 @@ Current status for phase-4 work:
 - first access-control foundation is already implemented
 - admin-mode foundations are implemented, but broader admin maintenance workflows are still planned
 - CI/CD foundation is already implemented
-- remaining environment work is focused on exact `dev` and `prod` launchers and packaging flow
+- explicit `dev` and `prod` launchers are now part of the implementation direction
+- remaining environment work is focused on final packaged path resolution and packaging flow
 - future admin backlog includes yearly reference-material maintenance for campaign rules, price lists, and IP-code mappings
 
 ## Task Control Guidance
