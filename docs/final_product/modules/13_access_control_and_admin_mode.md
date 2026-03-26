@@ -122,6 +122,7 @@ Read-only mode:
 Admin mode:
 
 - refresh reference data
+- manage future yearly reference-material updates for campaign rules, price lists, and IP-code mappings
 - inspect detailed run history and logs
 - remove mistaken staged intake files
 - rebuild or replace selected snapshots intentionally

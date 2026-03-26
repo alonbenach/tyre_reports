@@ -113,6 +113,26 @@ Every explicit reference refresh should capture:
 
 - fallback behavior when a reference refresh fails but prior SQL-backed references exist
 
+## Future Admin Reference Maintenance
+
+Phase 1 keeps reference authoring outside the app so campaign mappings and price lists can still be curated manually with extra care.
+
+Future versions should support an admin-maintained reference workflow inside the product for cases such as:
+
+- yearly motorcycle campaign rollover
+- new campaign discount rules
+- new yearly competitor price lists
+- IP-code mapping changes caused by material switches or product discontinuations
+
+That future workflow should let an admin:
+
+- load new source files for a new campaign year
+- validate the expected columns and sheet structure before replacing active references
+- review what reference domains are being changed
+- apply the refresh with clear provenance and rollback visibility
+
+This should stay an admin-only workflow and should not be mixed into the normal weekly operator path.
+
 ## Task Checklist
 
 - [x] inventory current reference spreadsheets and their required columns
@@ -125,3 +145,4 @@ Every explicit reference refresh should capture:
 - [x] define sheet-level mapping from each workbook to target SQL tables
 - [x] define refresh granularity: all references in one transaction vs per-source transaction
 - [ ] define fallback behavior when a reference refresh fails but prior SQL-backed references exist
+- [ ] design an admin-managed yearly reference update workflow for campaign rules, price lists, and IP-code mappings
