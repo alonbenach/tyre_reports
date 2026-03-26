@@ -86,6 +86,16 @@ class IngestionResult:
     duplicate_policy: str
 
 
+def remove_staged_intake_file(intake_dir: Path, snapshot_date: str) -> Path:
+    target_path = intake_dir / f"{snapshot_date}.csv"
+    if not target_path.exists():
+        raise OperatorFacingError(
+            f"The staged intake file for snapshot {snapshot_date} could not be found in {intake_dir}."
+        )
+    target_path.unlink()
+    return target_path
+
+
 def duplicate_snapshot_message(db_path: Path, source_file: Path) -> str | None:
     snapshot_date = _parse_snapshot_date(source_file)
     source_sha256 = _file_sha256(source_file)

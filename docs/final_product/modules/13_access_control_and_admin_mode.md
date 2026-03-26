@@ -76,14 +76,18 @@ Current implementation slice:
   - last heartbeat timestamp
   - session mode
 - UI startup evaluation and writable/read-only banner in `src/moto_app/ui/app.py`
+- explicit access-control panel in the UI showing:
+  - session mode
+  - writable owner summary
+  - admin-control state
+  - support guidance
+- explicit admin activation button for configured admin users with writable access
+- explicit stale-lock recovery button for configured admin users when the current lock is stale
+- explicit admin-only removal of a mistaken staged intake file
 - writable-session heartbeat refresh while the app remains open
 - automatic lock release on window close when the current session owns the lock
 - service-level regression tests in `tests/test_access_control.py`
-
-Current gap:
-
-- admin activation UI and explicit stale-lock clear controls are not implemented yet
-- the current UI only distinguishes writable vs read-only behavior
+- admin-only reference refresh is gated behind explicit admin activation
 
 ## Locked Decisions
 
@@ -118,6 +122,7 @@ Read-only mode:
 Admin mode:
 
 - refresh reference data
+- manage future yearly reference-material updates for campaign rules, price lists, and IP-code mappings
 - inspect detailed run history and logs
 - remove mistaken staged intake files
 - rebuild or replace selected snapshots intentionally
@@ -205,8 +210,9 @@ When a user reports that the app is read-only unexpectedly:
 - [x] define the admin capability matrix
 - [x] define how admin mode is entered and audited
 - [x] define stale-lock recovery procedure
-- [ ] add operator/support instructions for lock conflicts
+- [x] add operator/support instructions for lock conflicts
 - [x] implement the backend lock service
 - [x] wire read-only fallback into the UI
-- [ ] implement explicit admin activation and stale-lock recovery controls
+- [x] implement explicit admin activation and stale-lock recovery controls
+- [x] implement admin-only staged intake cleanup controls
 - [x] add automated tests for lock acquisition, read-only fallback, and stale-lock recovery

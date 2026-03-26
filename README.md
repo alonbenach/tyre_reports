@@ -1,6 +1,15 @@
 # Moto Weekly Report Pipeline
 
-Weekly data pipeline for Platforma Opon producer stats, focused on motorcycle analysis for Pirelli vs top competitors.
+Weekly motorcycle reporting application for Platforma Opon producer stats, focused on Pirelli vs top competitors.
+
+This repository now contains two things at once:
+
+- the legacy file-based pipeline under `scripts/`
+- the current SQLite-backed application under `src/moto_app/` and `database/tools/`
+
+For product planning and module checkpoints, use:
+
+- [`docs/final_product/README.md`](/c:/Users/benacal001/Documents/projects/moto_analysis/docs/final_product/README.md)
 
 ## What It Builds
 
@@ -46,7 +55,29 @@ Weekly data pipeline for Platforma Opon producer stats, focused on motorcycle an
   - seller bubble map and checkpoint table
   - key-fitment checkpoint table (top stocked fitments by brand)
 
-## Run
+## Preferred Runtime Entry Points
+
+Current application entry points:
+
+```powershell
+.\.venv\Scripts\python.exe database/tools/launch_ui.py
+```
+
+```powershell
+.\.venv\Scripts\python.exe database/tools/run_weekly.py
+```
+
+Database utilities:
+
+```powershell
+.\.venv\Scripts\python.exe database/tools/init_db.py
+.\.venv\Scripts\python.exe database/tools/load_reference_data.py
+.\.venv\Scripts\python.exe database/tools/check_parity.py
+```
+
+## Legacy Script Flow
+
+The original file-based scripts are still present for reference:
 
 ```powershell
 python scripts/run_weekly.py
@@ -73,9 +104,11 @@ python scripts/generate_offeror_focus.py --skip-pdf
 ## Notes
 
 - Input weekly files are expected at `data/ingest/YYYY-MM-DD.csv`.
+- The current app also stages intake files through the GUI before running them.
 - CSV parser uses tolerant decoding (`encoding_errors="replace"`) to handle mixed source text encodings.
 - For very large histories, consider incremental processing and a database-backed gold layer.
 - To show logos in charts, place files in `assets/logos/` (see `assets/logos/README.md`).
+- The current SQLite-backed app stores runtime state under `database/`, `logs/`, and `reports/`.
 - New QA tables:
   - `data/gold/gold_mapping_match_quality_weekly.csv`
   - `data/gold/gold_keyfitment_checkpoint_weekly.csv`

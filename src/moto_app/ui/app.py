@@ -36,16 +36,21 @@ from PySide6.QtWidgets import (
 )
 
 from moto_app.access_control import (
+    AccessControlError,
     AccessSession,
     acquire_access_session,
+    enable_admin_mode,
     evaluate_access,
+    lock_owner_summary,
     refresh_access_heartbeat,
     release_access_session,
+    recover_stale_lock_session,
 )
 from moto_app.app import run_weekly_pipeline
 from moto_app.config import AppConfig, ensure_runtime_dirs, load_config
 from moto_app.exports import list_current_generated_reports, list_generated_reports
 from moto_app.ingest import duplicate_snapshot_message
+from moto_app.ingest import remove_staged_intake_file
 from moto_app.observability import (
     YearCoverage,
     list_runs,
@@ -163,6 +168,12 @@ class MotoOperatorWindow(QMainWindow):
         self.selected_source_label: QLabel | None = None
         self.staged_name_label: QLabel | None = None
         self.coverage_cards_layout: QHBoxLayout | None = None
+        self.access_mode_detail: QLabel | None = None
+        self.access_owner_detail: QLabel | None = None
+        self.access_admin_detail: QLabel | None = None
+        self.access_help_detail: QLabel | None = None
+        self.admin_enable_button: QPushButton | None = None
+        self.recover_lock_button: QPushButton | None = None
 
         self.setWindowTitle(APP_TITLE)
         self.resize(1220, 800)
@@ -476,6 +487,33 @@ class MotoOperatorWindow(QMainWindow):
             grid.addWidget(widget, row, 1)
         detail_row.addWidget(group, 2)
 
+        access_group = QGroupBox("Access Control")
+        access_layout = QGridLayout(access_group)
+        self.access_mode_detail = QLabel("-")
+        self.access_owner_detail = QLabel("-")
+        self.access_admin_detail = QLabel("-")
+        self.access_help_detail = QLabel("-")
+        self.access_help_detail.setWordWrap(True)
+        access_rows = [
+            ("Session mode", self.access_mode_detail),
+            ("Writable owner", self.access_owner_detail),
+            ("Admin controls", self.access_admin_detail),
+            ("Support note", self.access_help_detail),
+        ]
+        for row, (label, widget) in enumerate(access_rows):
+            access_layout.addWidget(QLabel(label + ":"), row, 0)
+            access_layout.addWidget(widget, row, 1)
+        access_actions = QHBoxLayout()
+        self.admin_enable_button = QPushButton("Enable Admin Controls")
+        self.admin_enable_button.clicked.connect(self._enable_admin_mode)
+        self.recover_lock_button = QPushButton("Recover Stale Lock")
+        self.recover_lock_button.clicked.connect(self._recover_stale_lock)
+        access_actions.addWidget(self.admin_enable_button)
+        access_actions.addWidget(self.recover_lock_button)
+        access_actions.addStretch(1)
+        access_layout.addLayout(access_actions, len(access_rows), 0, 1, 2)
+        detail_row.addWidget(access_group, 2)
+
         summary_group = QGroupBox("Latest Run Log Summary")
         summary_layout = QVBoxLayout(summary_group)
         self.home_log_summary = QPlainTextEdit()
@@ -579,6 +617,8 @@ class MotoOperatorWindow(QMainWindow):
         self.browse_button.clicked.connect(self._browse_csv)
         self.stage_button = QPushButton("Stage CSV to Intake")
         self.stage_button.clicked.connect(self._stage_pending_source)
+        self.remove_staged_button = QPushButton("Remove Selected Staged Snapshot")
+        self.remove_staged_button.clicked.connect(self._remove_selected_staged_snapshot)
         self.run_snapshot_selector = QComboBox()
         self.include_pdf = QCheckBox("Generate PDF outputs")
         self.include_pdf.setChecked(self.config.include_pdf_by_default)
@@ -606,10 +646,11 @@ class MotoOperatorWindow(QMainWindow):
         controls_layout.addWidget(self.stage_button, 10, 0, 1, 2, alignment=Qt.AlignLeft)
         controls_layout.addWidget(QLabel("2. Select staged snapshot to run"), 11, 0, 1, 2)
         controls_layout.addWidget(self.run_snapshot_selector, 12, 0, 1, 2)
-        controls_layout.addWidget(self.include_pdf, 13, 0, 1, 2)
-        controls_layout.addWidget(self.replace_snapshot, 14, 0, 1, 2)
-        controls_layout.addWidget(self.refresh_references, 15, 0, 1, 2)
-        controls_layout.addWidget(self.start_button, 16, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(self.remove_staged_button, 13, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(self.include_pdf, 14, 0, 1, 2)
+        controls_layout.addWidget(self.replace_snapshot, 15, 0, 1, 2)
+        controls_layout.addWidget(self.refresh_references, 16, 0, 1, 2)
+        controls_layout.addWidget(self.start_button, 17, 0, 1, 2, alignment=Qt.AlignLeft)
 
         self._refresh_staged_snapshots()
 
@@ -645,50 +686,27 @@ class MotoOperatorWindow(QMainWindow):
         return tab
 
     def _initialize_access_mode(self) -> None:
-        evaluation = evaluate_access(self.config)
-        if evaluation.can_recover_stale_lock and evaluation.active_lock is not None:
-            answer = QMessageBox.question(
-                self,
-                APP_TITLE,
-                (
-                    "A stale writable session lock was found.\n\n"
-                    f"Owner: {evaluation.active_lock.user_name}@{evaluation.active_lock.machine_name}\n"
-                    f"Last heartbeat: {evaluation.active_lock.last_heartbeat_utc}\n\n"
-                    "Do you want to clear the stale lock and take the writable session?"
-                ),
-            )
-            self.access_session = acquire_access_session(
-                self.config,
-                recover_stale_lock=answer == QMessageBox.Yes,
-            )
-        else:
-            self.access_session = acquire_access_session(self.config)
+        self.access_session = acquire_access_session(self.config)
         self._apply_access_mode()
 
     def _apply_access_mode(self) -> None:
         session = self.access_session
         if session is None:
             return
+        role = "Admin" if session.admin_mode_enabled else ("Admin-eligible" if session.is_admin_user else "Operator")
         if session.mode == "writable":
-            role = "Admin" if session.is_admin_user else "Operator"
             self.access_banner.setStyleSheet(
                 "background: #dff1ee; border: 1px solid #b8ddd6; border-radius: 10px; padding: 10px 12px; color: #12424a; font-weight: 600;"
             )
-            self.access_banner.setText(
-                f"{role} mode: writable session active for {session.user_name}@{session.machine_name}. {session.reason}"
-            )
-            self.setWindowTitle(APP_TITLE)
+            banner_suffix = " Admin controls are enabled for this session." if session.admin_mode_enabled else ""
+            self.access_banner.setText(f"{role} mode: writable session active for {session.user_name}@{session.machine_name}. {session.reason}{banner_suffix}")
+            self.setWindowTitle(f"{APP_TITLE} [Admin]" if session.admin_mode_enabled else APP_TITLE)
         else:
-            owner = (
-                f"{session.active_lock.user_name}@{session.active_lock.machine_name}"
-                if session.active_lock is not None
-                else "unknown owner"
-            )
             self.access_banner.setStyleSheet(
                 "background: #fff4df; border: 1px solid #e4c88f; border-radius: 10px; padding: 10px 12px; color: #6b4b12; font-weight: 600;"
             )
             self.access_banner.setText(
-                f"Read-only mode: {session.reason} Writable session owner: {owner}. Output viewing remains available, but staging and run actions are disabled."
+                f"Read-only mode: {session.reason} Writable session owner: {lock_owner_summary(session.active_lock)}. Output viewing remains available, but staging and run actions are disabled."
             )
             self.setWindowTitle(f"{APP_TITLE} [Read-only]")
 
@@ -697,19 +715,101 @@ class MotoOperatorWindow(QMainWindow):
             self.csv_drop_zone,
             self.browse_button,
             self.stage_button,
+            self.remove_staged_button,
             self.snapshot_date_input,
             self.run_snapshot_selector,
             self.include_pdf,
             self.replace_snapshot,
-            self.refresh_references,
             self.start_button,
         ]:
             widget.setEnabled(can_write)
+        self.refresh_references.setEnabled(can_write and session.admin_mode_enabled)
+        self.remove_staged_button.setEnabled(can_write and session.admin_mode_enabled)
+        if not (can_write and session.admin_mode_enabled):
+            self.refresh_references.setChecked(False)
+
+        latest_evaluation = evaluate_access(self.config) if session.mode == "read_only" else None
+        if self.access_mode_detail is not None:
+            self.access_mode_detail.setText("Writable" if session.mode == "writable" else "Read-only")
+        if self.access_owner_detail is not None:
+            self.access_owner_detail.setText(lock_owner_summary(session.active_lock))
+        if self.access_admin_detail is not None:
+            if session.admin_mode_enabled:
+                self.access_admin_detail.setText("Enabled for this session")
+            elif session.is_admin_user:
+                self.access_admin_detail.setText("Eligible but not enabled")
+            else:
+                self.access_admin_detail.setText("Not available for this Windows user")
+        if self.access_help_detail is not None:
+            if session.mode == "writable":
+                if session.admin_mode_enabled:
+                    self.access_help_detail.setText("Admin controls are active. Reference refresh and stale-lock recovery actions are now available when relevant.")
+                elif session.is_admin_user:
+                    self.access_help_detail.setText("You may enable admin controls deliberately for support tasks. Normal weekly runs do not require admin mode.")
+                else:
+                    self.access_help_detail.setText("Normal operator mode is active. If another user reports read-only access, ask them to wait or contact an admin.")
+            else:
+                self.access_help_detail.setText(
+                    "If read-only mode is unexpected, check who owns the writable session first. Clear a stale lock only after confirming the other session is no longer active."
+                )
+        if self.admin_enable_button is not None:
+            self.admin_enable_button.setEnabled(session.mode == "writable" and session.is_admin_user and not session.admin_mode_enabled)
+        if self.recover_lock_button is not None:
+            self.recover_lock_button.setEnabled(
+                session.mode == "read_only"
+                and session.is_admin_user
+                and latest_evaluation is not None
+                and latest_evaluation.is_lock_stale
+                and latest_evaluation.can_recover_stale_lock
+            )
 
     def _refresh_access_heartbeat(self) -> None:
         if self.access_session is None:
             return
         self.access_session = refresh_access_heartbeat(self.config, self.access_session)
+        self._apply_access_mode()
+
+    def _enable_admin_mode(self) -> None:
+        if self.access_session is None:
+            return
+        try:
+            self.access_session = enable_admin_mode(self.config, self.access_session)
+        except AccessControlError as exc:
+            QMessageBox.information(self, APP_TITLE, str(exc))
+            return
+        self._apply_access_mode()
+        QMessageBox.information(
+            self,
+            APP_TITLE,
+            "Admin controls are now enabled for this session. Use them only for deliberate support or maintenance actions.",
+        )
+
+    def _recover_stale_lock(self) -> None:
+        if self.access_session is None:
+            return
+        lock_summary = lock_owner_summary(self.access_session.active_lock)
+        answer = QMessageBox.question(
+            self,
+            APP_TITLE,
+            (
+                "A stale writable-session lock can be recovered only after you confirm the other operator is no longer active.\n\n"
+                f"Current lock owner: {lock_summary}\n\n"
+                "Do you want to clear the stale lock and take the writable session?"
+            ),
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            self.access_session = recover_stale_lock_session(self.config, self.access_session)
+        except AccessControlError as exc:
+            QMessageBox.information(self, APP_TITLE, str(exc))
+            return
+        self._apply_access_mode()
+        QMessageBox.information(
+            self,
+            APP_TITLE,
+            "The stale lock was recovered. This session now holds the writable lock and admin controls are enabled.",
+        )
 
     def _build_history_tab(self) -> QWidget:
         tab = QWidget()
@@ -892,6 +992,43 @@ class MotoOperatorWindow(QMainWindow):
                 self.run_snapshot_selector.setCurrentIndex(index)
         self.run_snapshot_selector.blockSignals(False)
 
+    def _remove_selected_staged_snapshot(self) -> None:
+        if self.access_session is None or not self.access_session.admin_mode_enabled:
+            QMessageBox.information(
+                self,
+                APP_TITLE,
+                "Removing a staged intake file is an admin-only action. Enable admin controls first.",
+            )
+            return
+        snapshot_date = self.run_snapshot_selector.currentText()
+        if not snapshot_date:
+            QMessageBox.information(self, APP_TITLE, "Select a staged snapshot first.")
+            return
+        answer = QMessageBox.question(
+            self,
+            APP_TITLE,
+            (
+                f"Remove the staged intake file for snapshot {snapshot_date}?\n\n"
+                "Use this only when the wrong CSV was staged and you want to clear it before the next run."
+            ),
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            removed_path = remove_staged_intake_file(self.config.intake_dir, snapshot_date)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_TITLE, operator_message_for_exception(exc))
+            return
+        self._refresh_staged_snapshots()
+        self.csv_path.setText(str(self._staged_target_path()))
+        if self.selected_source_label is not None:
+            self.selected_source_label.setText(f"Removed staged intake file {removed_path.name}.")
+        QMessageBox.information(
+            self,
+            APP_TITLE,
+            f"Removed staged intake file {removed_path.name}.",
+        )
+
     def _start_run(self) -> None:
         if self.worker is not None and self.worker.isRunning():
             QMessageBox.information(self, APP_TITLE, "A run is already in progress.")
@@ -919,6 +1056,13 @@ class MotoOperatorWindow(QMainWindow):
             if duplicate_message is not None:
                 QMessageBox.information(self, APP_TITLE, duplicate_message)
                 return
+        if self.refresh_references.isChecked() and (self.access_session is None or not self.access_session.admin_mode_enabled):
+            QMessageBox.information(
+                self,
+                APP_TITLE,
+                "Reference refresh is an admin-only action. Enable admin controls first if you intentionally need to refresh the reference workbooks.",
+            )
+            return
 
         self.start_button.setEnabled(False)
         self.run_summary.setText(

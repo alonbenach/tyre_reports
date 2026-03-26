@@ -1,6 +1,8 @@
 # Final Product Plan
 
-This folder defines the planned module structure for the SQLite-backed motorcycle reporting application. The goal is to break implementation into bounded work packages before code changes begin.
+This folder defines the planned module structure for the SQLite-backed motorcycle reporting application.
+
+It started as a forward-looking implementation plan and now also acts as the project's living delivery record. Module files should be kept current as work is completed so future sessions can rely on the docs rather than on thread memory.
 
 Long-form overview document:
 
@@ -188,6 +190,19 @@ database/
 14. `environments_and_cicd`
     Development vs production environment model, branch policy, and CI/CD/test gates.
 
+## Delivery Status
+
+The project is no longer in pure planning mode. The current state is:
+
+- backend migration is implemented end to end
+- the PySide6 operator UI is implemented and in active use
+- CI is live with `ruff` and `pytest` checks on GitHub Actions
+- access control has a first implemented slice:
+  - one writable session at a time
+  - read-only fallback for additional sessions
+  - heartbeat and stale-lock detection
+- remaining work is now mostly operational hardening, admin controls, environment separation, and packaging
+
 ## Suggested Delivery Sequence
 
 ### Phase 1: Data/DB Foundation
@@ -209,19 +224,24 @@ database/
 
 10. Operator UI
 
-### Phase 4: Release
+### Phase 4: Release Hardening
 
 11. Packaging and distribution
 12. Access control and admin mode
 13. Environments and CI/CD
 
-Current planning direction for phase-4 work:
+Current status for phase-4 work:
 
 - one repository and one codebase
 - explicit `dev` and `prod` environments
 - future work branched from `main`
 - CI-enforced tests before merges to `main`
 - packaged production runtime distributed from a shared-drive location
+- first access-control foundation is already implemented
+- admin-mode foundations are implemented, but broader admin maintenance workflows are still planned
+- CI/CD foundation is already implemented
+- remaining environment work is focused on exact `dev` and `prod` launchers and packaging flow
+- future admin backlog includes yearly reference-material maintenance for campaign rules, price lists, and IP-code mappings
 
 ## Task Control Guidance
 
@@ -233,6 +253,7 @@ Recommended usage:
 - keep architecture decisions in the module spec where they affect scope
 - do not start frontend checklist items until backend parity is acceptable
 - use `testing_and_parity` as a gate between backend migration and frontend work
+- when a phase is partially implemented, update this README so the summary matches reality
 
 ## Notes
 
@@ -241,6 +262,6 @@ Recommended usage:
 - Raw CSV snapshots remain archived on disk.
 - Excel files may remain source material for reference-data refreshes, but not as live runtime dependencies.
 - Excel and PDF remain output formats, not storage layers.
-- Frontend work should start only after backend parity is acceptable.
+- Frontend work began only after backend parity was brought to an acceptable baseline.
 - Packaged operation is planned as a shared-drive app with runtime components kept close together for operator convenience.
 - Only one user should be allowed to hold the writable/operator session at a time; additional users should open in read-only mode.

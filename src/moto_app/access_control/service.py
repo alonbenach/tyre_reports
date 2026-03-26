@@ -59,6 +59,11 @@ class AccessSession:
     lock_path: Path
     session_id: str | None = None
     active_lock: LockMetadata | None = None
+    admin_mode_enabled: bool = False
+
+
+class AccessControlError(RuntimeError):
+    """Raised when an access-control action is not permitted."""
 
 
 def current_identity() -> tuple[str, str]:
@@ -166,6 +171,14 @@ def evaluate_access(config: AppConfig) -> AccessEvaluation:
     )
 
 
+def lock_owner_summary(lock: LockMetadata | None) -> str:
+    if lock is None:
+        return "No writable session lock is active."
+    owner = f"{lock.user_name}@{lock.machine_name}"
+    heartbeat = lock.last_heartbeat_utc or "unknown"
+    return f"{owner} (last heartbeat: {heartbeat})"
+
+
 def acquire_access_session(config: AppConfig, *, recover_stale_lock: bool = False) -> AccessSession:
     user_name, machine_name = current_identity()
     evaluation = evaluate_access(config)
@@ -179,6 +192,7 @@ def acquire_access_session(config: AppConfig, *, recover_stale_lock: bool = Fals
             machine_name=machine_name,
             lock_path=config.session_lock_path,
             active_lock=evaluation.active_lock,
+            admin_mode_enabled=False,
         )
 
     session_id = str(uuid.uuid4())
@@ -203,6 +217,7 @@ def acquire_access_session(config: AppConfig, *, recover_stale_lock: bool = Fals
                 machine_name=machine_name,
                 lock_path=config.session_lock_path,
                 active_lock=latest.active_lock,
+                admin_mode_enabled=False,
             )
     else:
         _write_lock(config.session_lock_path, metadata)
@@ -246,6 +261,51 @@ def refresh_access_heartbeat(config: AppConfig, session: AccessSession) -> Acces
         lock_path=session.lock_path,
         session_id=session.session_id,
         active_lock=updated,
+        admin_mode_enabled=session.admin_mode_enabled,
+    )
+
+
+def enable_admin_mode(config: AppConfig, session: AccessSession) -> AccessSession:
+    if not session.is_admin_user:
+        raise AccessControlError("Admin controls are only available to configured admin users.")
+    if session.mode != "writable":
+        raise AccessControlError("Admin controls can only be enabled from the active writable session.")
+    if session.admin_mode_enabled:
+        return session
+    return AccessSession(
+        mode=session.mode,
+        reason=session.reason,
+        is_admin_user=session.is_admin_user,
+        user_name=session.user_name,
+        machine_name=session.machine_name,
+        lock_path=session.lock_path,
+        session_id=session.session_id,
+        active_lock=session.active_lock,
+        admin_mode_enabled=True,
+    )
+
+
+def recover_stale_lock_session(config: AppConfig, session: AccessSession) -> AccessSession:
+    if not session.is_admin_user:
+        raise AccessControlError("Only configured admin users may recover a stale lock.")
+    latest = evaluate_access(config)
+    if not latest.is_lock_stale:
+        raise AccessControlError("The current writable-session lock is not stale, so it cannot be cleared.")
+    if not latest.can_recover_stale_lock:
+        raise AccessControlError("This session is not allowed to recover the stale lock.")
+    recovered = acquire_access_session(config, recover_stale_lock=True)
+    if recovered.mode != "writable":
+        raise AccessControlError("Could not take ownership of the writable session after stale-lock recovery.")
+    return AccessSession(
+        mode=recovered.mode,
+        reason=recovered.reason,
+        is_admin_user=recovered.is_admin_user,
+        user_name=recovered.user_name,
+        machine_name=recovered.machine_name,
+        lock_path=recovered.lock_path,
+        session_id=recovered.session_id,
+        active_lock=recovered.active_lock,
+        admin_mode_enabled=True,
     )
 
 
