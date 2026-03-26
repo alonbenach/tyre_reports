@@ -112,6 +112,14 @@ Current operator conveniences:
 - direct opening of per-report `excel` and `reports` folders
 - startup access-mode handling backed by backend lock evaluation
 - read-only fallback mode with a visible banner and disabled staging/run controls
+- home-screen access-control panel showing:
+  - current access mode
+  - writable-session owner
+  - admin-control state
+  - lock-conflict support guidance
+- explicit admin-control activation in the UI for configured admin users
+- explicit stale-lock recovery action in the UI for configured admin users
+- reference refresh remains visible in the weekly-run screen but is enabled only when admin controls have been activated for the current writable session
 
 ## Task Checklist
 

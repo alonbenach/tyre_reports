@@ -7,10 +7,13 @@ import shutil
 import uuid
 
 from moto_app.access_control import (
+    AccessControlError,
     acquire_access_session,
+    enable_admin_mode,
     evaluate_access,
     refresh_access_heartbeat,
     release_access_session,
+    recover_stale_lock_session,
 )
 from moto_app.config import default_config
 
@@ -99,5 +102,52 @@ def test_admin_user_can_recover_stale_lock(monkeypatch) -> None:
         recovered = acquire_access_session(config, recover_stale_lock=True)
         assert recovered.mode == "writable"
         assert recovered.reason == "Recovered a stale writable session lock."
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_admin_mode_requires_eligible_writable_session(monkeypatch) -> None:
+    tmp_path = ROOT / "database" / "_test_work" / str(uuid.uuid4())
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    config = _config_for(tmp_path)
+    try:
+        monkeypatch.setattr("moto_app.access_control.service.current_identity", lambda: ("admin-user", "machine-admin"))
+        session = acquire_access_session(config)
+        enabled = enable_admin_mode(config, session)
+        assert enabled.admin_mode_enabled
+
+        monkeypatch.setattr("moto_app.access_control.service.current_identity", lambda: ("operator-a", "machine-a"))
+        read_only = acquire_access_session(config)
+        assert read_only.mode == "read_only"
+        try:
+            enable_admin_mode(config, read_only)
+        except AccessControlError as exc:
+            assert "configured admin users" in str(exc)
+        else:
+            raise AssertionError("Expected admin mode enable to fail for a non-admin session.")
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_stale_lock_recovery_helper_enables_admin_mode(monkeypatch) -> None:
+    tmp_path = ROOT / "database" / "_test_work" / str(uuid.uuid4())
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    config = _config_for(tmp_path)
+    try:
+        monkeypatch.setattr("moto_app.access_control.service.current_identity", lambda: ("operator-a", "machine-a"))
+        session = acquire_access_session(config)
+        stale_time = datetime.now(UTC) - timedelta(seconds=config.lock_stale_seconds + 10)
+        monkeypatch.setattr("moto_app.access_control.service._utc_now", lambda: stale_time)
+        refresh_access_heartbeat(config, session)
+
+        now = datetime.now(UTC)
+        monkeypatch.setattr("moto_app.access_control.service._utc_now", lambda: now)
+        monkeypatch.setattr("moto_app.access_control.service.current_identity", lambda: ("admin-user", "machine-admin"))
+        admin_view = acquire_access_session(config)
+        assert admin_view.mode == "read_only"
+
+        recovered = recover_stale_lock_session(config, admin_view)
+        assert recovered.mode == "writable"
+        assert recovered.admin_mode_enabled
     finally:
         shutil.rmtree(tmp_path, ignore_errors=True)
