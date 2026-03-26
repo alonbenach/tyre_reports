@@ -93,6 +93,7 @@ Planned environment direction:
 - `prod`
   - packaged/shared-drive runtime paths with components kept close together for operator convenience
   - currently modeled in code as `runtime/prod/` under the chosen base root so the packaged/shared-drive layout can be tested before final packaging
+  - should collapse to a flat operator-facing production root during packaging so users interact with one obvious app folder
 
 Planned backend package layout:
 
@@ -128,7 +129,6 @@ The configuration object should expose at least:
 
 - exact packaged user-data location on Windows
 - whether logs should be retained by count, age, or both
-- whether packaged `prod` should keep using the `runtime/prod/` shape directly or collapse one level when the executable is promoted to the shared drive
 
 ## Task Checklist
 
@@ -140,4 +140,5 @@ The configuration object should expose at least:
 - [x] define environment detection for development vs packaged runtime
 - [x] define path override policy for power users or support scenarios
 - [x] define exact `dev` and `prod` launcher/environment path mechanics for the current pre-packaging stage
+- [x] define that packaged `prod` should collapse to a flat operator-facing root instead of exposing `runtime/prod/`
 - [ ] define how packaged app builds resolve user-data locations

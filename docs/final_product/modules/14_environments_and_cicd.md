@@ -141,6 +141,12 @@ Current implementation files:
 
 The important point is that environment selection is now explicit and predictable.
 
+Current interpretation:
+
+- `dev` is the working development/runtime context used from the repository
+- `prod` is the production-target runtime context used to prepare packaging and deployment behavior
+- true isolation between development and production comes from packaging and distribution of a reviewed build, not from config split alone
+
 ## Planned CI/CD Model
 
 Proposed baseline:
@@ -220,6 +226,12 @@ Recommended promotion sequence:
 5. copy/promote the approved package into the shared-drive production location
 
 This keeps production tied to a known reviewed state rather than an active development folder.
+
+Locked packaging direction:
+
+- build a portable Windows application folder first
+- use `PyInstaller` as the preferred initial packaging tool
+- collapse the final operator-facing production package to one flat root folder instead of exposing `runtime/prod/`
 
 ## Rollback Direction
 

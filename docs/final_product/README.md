@@ -241,7 +241,9 @@ Current status for phase-4 work:
 - admin-mode foundations are implemented, but broader admin maintenance workflows are still planned
 - CI/CD foundation is already implemented
 - explicit `dev` and `prod` launchers are now part of the implementation direction
-- remaining environment work is focused on final packaged path resolution and packaging flow
+- packaging direction is now locked to a portable Windows folder with `PyInstaller` as the preferred first tool
+- final operator-facing production packaging should use a flat app root rather than exposing `runtime/prod/`
+- remaining environment work is focused on implementing the packaging flow and final packaged path resolution details
 - future admin backlog includes yearly reference-material maintenance for campaign rules, price lists, and IP-code mappings
 
 ## Task Control Guidance
