@@ -5,6 +5,7 @@ from .service import (
     IngestionResult,
     duplicate_snapshot_message,
     ingest_weekly_csv,
+    remove_staged_intake_file,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "IngestionResult",
     "duplicate_snapshot_message",
     "ingest_weekly_csv",
+    "remove_staged_intake_file",
 ]

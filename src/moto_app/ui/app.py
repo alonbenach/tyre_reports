@@ -50,6 +50,7 @@ from moto_app.app import run_weekly_pipeline
 from moto_app.config import AppConfig, ensure_runtime_dirs, load_config
 from moto_app.exports import list_current_generated_reports, list_generated_reports
 from moto_app.ingest import duplicate_snapshot_message
+from moto_app.ingest import remove_staged_intake_file
 from moto_app.observability import (
     YearCoverage,
     list_runs,
@@ -616,6 +617,8 @@ class MotoOperatorWindow(QMainWindow):
         self.browse_button.clicked.connect(self._browse_csv)
         self.stage_button = QPushButton("Stage CSV to Intake")
         self.stage_button.clicked.connect(self._stage_pending_source)
+        self.remove_staged_button = QPushButton("Remove Selected Staged Snapshot")
+        self.remove_staged_button.clicked.connect(self._remove_selected_staged_snapshot)
         self.run_snapshot_selector = QComboBox()
         self.include_pdf = QCheckBox("Generate PDF outputs")
         self.include_pdf.setChecked(self.config.include_pdf_by_default)
@@ -643,10 +646,11 @@ class MotoOperatorWindow(QMainWindow):
         controls_layout.addWidget(self.stage_button, 10, 0, 1, 2, alignment=Qt.AlignLeft)
         controls_layout.addWidget(QLabel("2. Select staged snapshot to run"), 11, 0, 1, 2)
         controls_layout.addWidget(self.run_snapshot_selector, 12, 0, 1, 2)
-        controls_layout.addWidget(self.include_pdf, 13, 0, 1, 2)
-        controls_layout.addWidget(self.replace_snapshot, 14, 0, 1, 2)
-        controls_layout.addWidget(self.refresh_references, 15, 0, 1, 2)
-        controls_layout.addWidget(self.start_button, 16, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(self.remove_staged_button, 13, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(self.include_pdf, 14, 0, 1, 2)
+        controls_layout.addWidget(self.replace_snapshot, 15, 0, 1, 2)
+        controls_layout.addWidget(self.refresh_references, 16, 0, 1, 2)
+        controls_layout.addWidget(self.start_button, 17, 0, 1, 2, alignment=Qt.AlignLeft)
 
         self._refresh_staged_snapshots()
 
@@ -711,6 +715,7 @@ class MotoOperatorWindow(QMainWindow):
             self.csv_drop_zone,
             self.browse_button,
             self.stage_button,
+            self.remove_staged_button,
             self.snapshot_date_input,
             self.run_snapshot_selector,
             self.include_pdf,
@@ -719,6 +724,7 @@ class MotoOperatorWindow(QMainWindow):
         ]:
             widget.setEnabled(can_write)
         self.refresh_references.setEnabled(can_write and session.admin_mode_enabled)
+        self.remove_staged_button.setEnabled(can_write and session.admin_mode_enabled)
         if not (can_write and session.admin_mode_enabled):
             self.refresh_references.setChecked(False)
 
@@ -985,6 +991,43 @@ class MotoOperatorWindow(QMainWindow):
             if index >= 0:
                 self.run_snapshot_selector.setCurrentIndex(index)
         self.run_snapshot_selector.blockSignals(False)
+
+    def _remove_selected_staged_snapshot(self) -> None:
+        if self.access_session is None or not self.access_session.admin_mode_enabled:
+            QMessageBox.information(
+                self,
+                APP_TITLE,
+                "Removing a staged intake file is an admin-only action. Enable admin controls first.",
+            )
+            return
+        snapshot_date = self.run_snapshot_selector.currentText()
+        if not snapshot_date:
+            QMessageBox.information(self, APP_TITLE, "Select a staged snapshot first.")
+            return
+        answer = QMessageBox.question(
+            self,
+            APP_TITLE,
+            (
+                f"Remove the staged intake file for snapshot {snapshot_date}?\n\n"
+                "Use this only when the wrong CSV was staged and you want to clear it before the next run."
+            ),
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            removed_path = remove_staged_intake_file(self.config.intake_dir, snapshot_date)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_TITLE, operator_message_for_exception(exc))
+            return
+        self._refresh_staged_snapshots()
+        self.csv_path.setText(str(self._staged_target_path()))
+        if self.selected_source_label is not None:
+            self.selected_source_label.setText(f"Removed staged intake file {removed_path.name}.")
+        QMessageBox.information(
+            self,
+            APP_TITLE,
+            f"Removed staged intake file {removed_path.name}.",
+        )
 
     def _start_run(self) -> None:
         if self.worker is not None and self.worker.isRunning():

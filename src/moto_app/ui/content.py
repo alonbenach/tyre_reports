@@ -14,6 +14,7 @@ Weekly run
 Troubleshooting
 - If the CSV is missing columns, export the source file again from Platforma Opon.
 - If a snapshot already exists, rerun only when you intentionally want to replace that week.
+- If the wrong CSV was staged into intake, use admin controls to remove the staged file before trying again.
 - If report generation fails, check the latest run log first.
 - If reference refresh fails, verify the workbook names and sheet structure in data/campaign rules.
 - If the app opens in read-only mode, first check who holds the writable session before assuming anything is broken.

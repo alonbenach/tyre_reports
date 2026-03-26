@@ -83,6 +83,7 @@ Current implementation slice:
   - support guidance
 - explicit admin activation button for configured admin users with writable access
 - explicit stale-lock recovery button for configured admin users when the current lock is stale
+- explicit admin-only removal of a mistaken staged intake file
 - writable-session heartbeat refresh while the app remains open
 - automatic lock release on window close when the current session owns the lock
 - service-level regression tests in `tests/test_access_control.py`
@@ -212,4 +213,5 @@ When a user reports that the app is read-only unexpectedly:
 - [x] implement the backend lock service
 - [x] wire read-only fallback into the UI
 - [x] implement explicit admin activation and stale-lock recovery controls
+- [x] implement admin-only staged intake cleanup controls
 - [x] add automated tests for lock acquisition, read-only fallback, and stale-lock recovery

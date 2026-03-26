@@ -119,6 +119,7 @@ Current operator conveniences:
   - lock-conflict support guidance
 - explicit admin-control activation in the UI for configured admin users
 - explicit stale-lock recovery action in the UI for configured admin users
+- admin-only removal of a selected staged intake file when the wrong weekly CSV was staged
 - reference refresh remains visible in the weekly-run screen but is enabled only when admin controls have been activated for the current writable session
 
 ## Task Checklist
@@ -140,3 +141,4 @@ Current operator conveniences:
 - [x] warn about duplicate snapshot conflicts before starting a run when replace mode is off
 - [x] show current live output files rather than the full generated-output audit history
 - [x] support report-specific output browsing with separate Excel and reports folders
+- [x] support admin-only removal of a mistaken staged intake file
