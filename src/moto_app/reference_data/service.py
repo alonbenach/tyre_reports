@@ -309,4 +309,6 @@ def refresh_reference_data(db_path: Path, source_dir: Path) -> ReferenceRefreshR
                 cause=exc,
             ) from exc
 
+        connection.commit()
+
     return ReferenceRefreshResult(db_path=db_path, refreshed_scopes=scopes)
