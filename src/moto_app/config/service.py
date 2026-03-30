@@ -29,7 +29,11 @@ class AppConfig:
     lock_stale_seconds: int
 
 
-def _default_root() -> Path:
+def resolve_base_root(app_root: Path | None = None) -> Path:
+    if app_root is not None:
+        return Path(app_root)
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parents[3]
 
 
@@ -41,12 +45,14 @@ def _runtime_root(base_root: Path, environment: str) -> Path:
     if environment == "dev":
         return base_root
     if environment == "prod":
+        if getattr(sys, "frozen", False):
+            return base_root
         return base_root / "runtime" / "prod"
     raise ValueError(f"Unsupported environment: {environment}")
 
 
 def default_config(app_root: Path | None = None, *, environment: str = "dev") -> AppConfig:
-    base_root = Path(app_root) if app_root is not None else _default_root()
+    base_root = resolve_base_root(app_root)
     root = _runtime_root(base_root, environment)
     database_dir = root / "database"
     runtime_mode = detect_runtime_mode() if environment == "dev" else "production"
