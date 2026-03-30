@@ -58,21 +58,6 @@ This module is cross-cutting and applies after frontend, backend, and data layer
 - install/update guide
 - operator handoff checklist
 
-## Phase-1 Packaging Foundation
-
-Current implementation foundation:
-
-- `packaging/MotoWeeklyOperator.spec`
-- `packaging/build_portable.ps1`
-- explicit production launcher target: `database/tools/run_app_prod.py`
-
-Current scope of that foundation:
-
-- builds toward a `PyInstaller` portable folder package
-- packages the production launcher instead of the development launcher
-- creates the expected operator-facing runtime folder skeleton after build
-- writes placeholder readme files into runtime folders that still require manual reference-file maintenance
-
 ## Open Decisions
 
 - update mechanism for new application versions
@@ -128,6 +113,22 @@ Current scope of that foundation:
 - packages the production launcher instead of the development launcher
 - creates the expected operator-facing runtime folder skeleton after build
 - writes placeholder readme files into runtime folders that still require manual reference-file maintenance
+- has now been validated locally through a packaged `dist/MotoWeeklyOperator/` smoke run
+
+## Current Validation Status
+
+Local packaged validation now confirms:
+
+- the portable app folder builds successfully with `PyInstaller`
+- the packaged executable launches from `dist/MotoWeeklyOperator/`
+- the packaged runtime creates and uses the flat production-style folder layout
+- local weekly runs can complete successfully from the packaged copy
+- Excel and PDF outputs are generated from the packaged copy
+- the latest trusted weekly output has been checked against the packaged app and matched
+
+Current rollout caveat:
+
+- a fresh packaged runtime still expects an admin to import the reference workbooks into SQLite on first use by enabling `Refresh reference data before run`
 
 ## Task Checklist
 
@@ -135,6 +136,8 @@ Current scope of that foundation:
 - [x] define dependency bundling strategy
 - [x] define installation layout for executable, DB, logs, and reports
 - [x] create initial packaging config and build script scaffolding
+- [x] validate a first local packaged smoke build end to end
 - [ ] define upgrade/update procedure
+- [ ] document first-run packaged setup steps for operators and admins
 - [ ] document operator installation and handoff steps
 - [ ] create a release checklist for packaged builds

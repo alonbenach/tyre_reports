@@ -69,6 +69,7 @@ This module is part of the backend/application layer.
   - `data/campaign rules/canonical fitment mapping.xlsx`
   - `data/campaign rules/price list Pirelli and competitors.xlsx`
 - Each reference refresh must record source file path, checksum, refresh timestamp, and outcome status.
+- A fresh packaged deployment is not ready for normal weekly runs until an admin explicitly imports the reference workbooks into SQLite at least once.
 
 ## Initial Reference Domains
 
@@ -139,7 +140,7 @@ This should stay an admin-only workflow and should not be mixed into the normal 
 - [x] define normalized `ref_*` tables in SQLite
 - [x] define provenance metadata for each refresh
 - [x] implement spreadsheet-to-SQL import flow
-- [ ] implement validation and operator-safe error messages for reference refreshes
+- [x] implement validation and operator-safe error messages for reference refreshes
 - [x] define how backend services consume reference datasets at runtime
 - [x] decide whether refresh is automatic or operator-triggered
 - [x] define sheet-level mapping from each workbook to target SQL tables
