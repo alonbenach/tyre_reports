@@ -201,7 +201,12 @@ The project is no longer in pure planning mode. The current state is:
   - one writable session at a time
   - read-only fallback for additional sessions
   - heartbeat and stale-lock detection
-- remaining work is now mostly operational hardening, admin controls, environment separation, and packaging
+- packaging foundation is implemented and now proven locally:
+  - `PyInstaller` portable build works
+  - packaged app launches from `dist/MotoWeeklyOperator/`
+  - packaged local weekly runs complete end to end
+  - latest trusted weekly output has been spot-checked against the packaged app and matched
+- remaining work is now mostly release hardening, historical parity review, yearly admin maintenance workflows, and shared-drive rollout polish
 
 ## Suggested Delivery Sequence
 
@@ -243,6 +248,11 @@ Current status for phase-4 work:
 - explicit `dev` and `prod` launchers are now part of the implementation direction
 - packaging direction is now locked to a portable Windows folder with `PyInstaller` as the preferred first tool
 - final operator-facing production packaging should use a flat app root rather than exposing `runtime/prod/`
+- packaged runtime issues found during local rollout testing have been addressed in code:
+  - packaged DB initialization
+  - packaged DB path consistency
+  - persistence of refreshed reference data
+  - packaged PDF edge cases for recap and empty offeror-focus layouts
 - remaining environment work is focused on implementing the packaging flow and final packaged path resolution details
 - future admin backlog includes yearly reference-material maintenance for campaign rules, price lists, and IP-code mappings
 

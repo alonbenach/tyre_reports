@@ -7,6 +7,15 @@ This repository now contains two things at once:
 - the legacy file-based pipeline under `scripts/`
 - the current SQLite-backed application under `src/moto_app/` and `database/tools/`
 
+## Current State
+
+- the SQLite-backed desktop application is the primary product path
+- the PySide6 operator UI is in active use
+- a portable `PyInstaller` build now launches successfully from `dist/MotoWeeklyOperator/`
+- first packaged local runs are working end to end, including Excel and PDF generation
+- the latest trusted weekly output has been checked against the packaged app and matched
+- legacy scripts remain in the repo for reference, historical comparison, and controlled fallback only
+
 For product planning and module checkpoints, use:
 
 - [`docs/final_product/README.md`](/c:/Users/benacal001/Documents/projects/moto_analysis/docs/final_product/README.md)
@@ -16,10 +25,12 @@ For product planning and module checkpoints, use:
 - `data/raw/snapshot_date=YYYY-MM-DD/source.csv` archived raw files
 - `data/silver/motorcycle_weekly.parquet` (or CSV fallback)
 - `data/gold/*.csv` marts for market, brands, fitments, sellers, positioning, recap, and mapping quality
-- `reports/PRICE_POSITIONING_Wxx_Poland.xlsx`
-- `reports/PRICE_POSITIONING_Wxx_Poland.pdf` (if `matplotlib` is installed)
-- `reports/offeror_focus_Wxx_Poland.xlsx`
-- `reports/offeror_focus_Wxx_Poland.pdf` (if `matplotlib` is installed)
+- `reports/price_positioning/excel/PRICE_POSITIONING_Wxx_Poland.xlsx`
+- `reports/price_positioning/reports/PRICE_POSITIONING_Wxx_Poland.pdf`
+- `reports/offeror_focus/excel/offeror_focus_Wxx_Poland.xlsx`
+- `reports/offeror_focus/reports/offeror_focus_Wxx_Poland.pdf`
+- SQLite runtime state in `database/moto_pipeline.db`
+- run logs in `logs/`
 
 ## Scope Implemented
 
@@ -80,7 +91,13 @@ Portable packaging foundation:
 .\packaging\build_portable.ps1
 ```
 
-This builds toward a `PyInstaller`-based portable Windows app folder for production distribution.
+This produces a `PyInstaller`-based portable Windows app folder under `dist/MotoWeeklyOperator/`.
+
+Packaged production launcher:
+
+```text
+dist/MotoWeeklyOperator/MotoWeeklyOperator.exe
+```
 
 Database utilities:
 
@@ -120,6 +137,7 @@ python scripts/generate_offeror_focus.py --skip-pdf
 
 - Input weekly files are expected at `data/ingest/YYYY-MM-DD.csv`.
 - The current app also stages intake files through the GUI before running them.
+- On a fresh packaged deployment, an admin should run the first weekly cycle with `Refresh reference data before run` enabled so the reference workbooks are imported into SQLite.
 - CSV parser uses tolerant decoding (`encoding_errors="replace"`) to handle mixed source text encodings.
 - For very large histories, consider incremental processing and a database-backed gold layer.
 - To show logos in charts, place files in `assets/logos/` (see `assets/logos/README.md`).

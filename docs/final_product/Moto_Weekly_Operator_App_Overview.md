@@ -19,6 +19,19 @@ The goal is to make it possible to sit down with this one document and understan
 
 This document is intentionally longer than the README and less technical than the module specs. It tries to explain the system in plain language while still being accurate enough to support real design review.
 
+## Current Status Snapshot
+
+At the time of this update, the app is no longer just a design or prototype:
+
+- the SQLite-backed backend is implemented
+- the PySide6 desktop UI is implemented
+- CI is active with lint and test gates
+- a portable packaged build now launches successfully
+- local packaged runs complete end to end
+- the latest trusted weekly output has been checked against the packaged app and matched
+
+That means the project has moved from "can this be built?" into "what still needs hardening before broader rollout and long-term maintenance?"
+
 ## The Short Version
 
 The Moto Weekly Operator App is a Windows desktop tool for running a weekly motorcycle reporting process in a safe and repeatable way.
@@ -891,4 +904,3 @@ That means the real product is not only the PDFs and Excel files. The real produ
 - a process that another person can operate with confidence
 
 That is the larger idea holding the whole project together.
-

@@ -146,6 +146,7 @@ Current interpretation:
 - `dev` is the working development/runtime context used from the repository
 - `prod` is the production-target runtime context used to prepare packaging and deployment behavior
 - true isolation between development and production comes from packaging and distribution of a reviewed build, not from config split alone
+- recent packaged-runtime debugging has reinforced that packaged smoke validation must remain part of the release discipline, because runtime path and persistence bugs can still exist even when repository tests are green
 
 ## Planned CI/CD Model
 

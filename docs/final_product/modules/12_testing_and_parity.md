@@ -81,9 +81,13 @@ Implemented assets:
 - parity helper module in `src/moto_app/testing/parity.py`
 - manual parity tool in `database/tools/check_parity.py`
 - integration test suite in `tests/test_backend_pipeline.py`
+- reference-refresh persistence regression in `tests/test_reference_data_service.py`
 - snapshot fixture in `tests/fixtures/2026-02-10_sample.csv`
 - snapshot helper utilities in `tests/conftest.py` and `tests/snapshot_utils.py`
 - snapshot regression test in `tests/test_snapshot_pipeline.py`
+- report regression tests for packaged-runtime edge cases in:
+  - `tests/test_report_price_offer.py`
+  - `tests/test_report_offeror_focus.py`
 - committed baseline snapshots under `tests/snapshots/`
 
 Current automated quality flow:
@@ -92,6 +96,14 @@ Current automated quality flow:
 - `pytest` runs the backend smoke tests and the snapshot regression test
 - intentional snapshot changes are updated locally with:
   - `python -m pytest tests/test_snapshot_pipeline.py --update-snapshots`
+
+Current parity note:
+
+- the latest trusted weekly report has been manually compared against the packaged application and matched
+- older historical weeks may still differ if logic or reference rules changed between the original legacy runs and the current replay path
+- future parity work should therefore distinguish:
+  - trusted latest-week release parity
+  - historical replay/backfill parity
 
 ## Task Checklist
 
@@ -103,3 +115,4 @@ Current automated quality flow:
 - [x] add committed snapshot baselines and a controlled snapshot update workflow
 - [ ] define smoke coverage for operator workflows
 - [x] document release-readiness gates before packaging
+- [ ] add explicit packaged-runtime parity coverage for a trusted released week

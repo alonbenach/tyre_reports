@@ -121,6 +121,7 @@ Current operator conveniences:
 - explicit stale-lock recovery action in the UI for configured admin users
 - admin-only removal of a selected staged intake file when the wrong weekly CSV was staged
 - reference refresh remains visible in the weekly-run screen but is enabled only when admin controls have been activated for the current writable session
+- packaged first-run behavior currently expects an admin to enable `Refresh reference data before run` so the copied workbook files are imported into SQLite before normal operator use
 
 ## Task Checklist
 
