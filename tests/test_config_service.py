@@ -15,6 +15,7 @@ def test_default_config_dev_uses_repo_root() -> None:
     assert config.environment_name == "dev"
     assert config.app_root == ROOT
     assert config.database_path == ROOT / "database" / "moto_pipeline.db"
+    assert config.migrations_dir == ROOT / "database" / "migrations"
     assert config.intake_dir == ROOT / "data" / "ingest"
 
 
@@ -28,6 +29,7 @@ def test_default_config_prod_uses_runtime_prod_root() -> None:
         assert config.runtime_mode == "production"
         assert config.app_root == expected_root
         assert config.database_path == expected_root / "database" / "moto_pipeline.db"
+        assert config.migrations_dir == expected_root / "database" / "migrations"
         assert config.reports_dir == expected_root / "reports"
         ensure_runtime_dirs(config)
         assert config.database_dir.exists()
