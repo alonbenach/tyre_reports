@@ -58,9 +58,23 @@ This module is cross-cutting and applies after frontend, backend, and data layer
 - install/update guide
 - operator handoff checklist
 
+## Phase-1 Packaging Foundation
+
+Current implementation foundation:
+
+- `packaging/MotoWeeklyOperator.spec`
+- `packaging/build_portable.ps1`
+- explicit production launcher target: `database/tools/run_app_prod.py`
+
+Current scope of that foundation:
+
+- builds toward a `PyInstaller` portable folder package
+- packages the production launcher instead of the development launcher
+- creates the expected operator-facing runtime folder skeleton after build
+- writes placeholder readme files into runtime folders that still require manual reference-file maintenance
+
 ## Open Decisions
 
-- single portable folder vs installer-based deployment
 - update mechanism for new application versions
 
 ## Locked Direction
@@ -69,12 +83,58 @@ This module is cross-cutting and applies after frontend, backend, and data layer
 - The shared-drive production package should keep related runtime components close together for operator convenience.
 - Packaging should eventually align with explicit environment launchers such as `run_app_dev` and `run_app_prod`.
 - The current pre-packaging implementation models production runtime paths under `runtime/prod/` so the future shared-drive folder layout can be exercised before packaging is finalized.
+- The first packaging target should be a portable Windows folder, not an MSI-style installer.
+- The preferred first packaging tool is `PyInstaller`.
+- The final operator-facing production package should use a flat root folder layout rather than exposing `runtime/prod/` to users.
+- Operators should receive a packaged app folder containing the executable plus nearby runtime folders such as:
+  - `database/`
+  - `data/campaign rules/`
+  - `data/ingest/`
+  - `data/raw/`
+  - `reports/`
+  - `logs/`
+  - `assets/`
+
+## Planned Production Folder Layout
+
+Target operator-facing production layout:
+
+```text
+MotoWeeklyOperator/
+  MotoWeeklyOperator.exe
+  database/
+  data/
+    campaign rules/
+    ingest/
+    raw/
+  reports/
+  logs/
+  assets/
+```
+
+The current `runtime/prod/` structure is a development and pre-packaging modeling aid only. It should not be the final operator-facing folder shape unless packaging work proves there is a strong reason to keep it.
+
+## Phase-1 Packaging Foundation
+
+Current implementation foundation:
+
+- `packaging/MotoWeeklyOperator.spec`
+- `packaging/build_portable.ps1`
+- explicit production launcher target: `database/tools/run_app_prod.py`
+
+Current scope of that foundation:
+
+- builds toward a `PyInstaller` portable folder package
+- packages the production launcher instead of the development launcher
+- creates the expected operator-facing runtime folder skeleton after build
+- writes placeholder readme files into runtime folders that still require manual reference-file maintenance
 
 ## Task Checklist
 
-- [ ] choose packaging format for Windows
-- [ ] define dependency bundling strategy
-- [ ] define installation layout for executable, DB, logs, and reports
+- [x] choose packaging format for Windows
+- [x] define dependency bundling strategy
+- [x] define installation layout for executable, DB, logs, and reports
+- [x] create initial packaging config and build script scaffolding
 - [ ] define upgrade/update procedure
 - [ ] document operator installation and handoff steps
 - [ ] create a release checklist for packaged builds

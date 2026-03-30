@@ -7,6 +7,8 @@ __pycache__/
 .ruff_cache/
 pytest-cache-files-*/
 .vscode/
+build/
+dist/
 
 # Data and private business artifacts
 data/

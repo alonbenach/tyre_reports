@@ -74,6 +74,14 @@ Explicit environment launchers:
 .\.venv\Scripts\python.exe database/tools/run_app_prod.py
 ```
 
+Portable packaging foundation:
+
+```powershell
+.\packaging\build_portable.ps1
+```
+
+This builds toward a `PyInstaller`-based portable Windows app folder for production distribution.
+
 Database utilities:
 
 ```powershell
