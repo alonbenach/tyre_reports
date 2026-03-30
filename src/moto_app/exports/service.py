@@ -231,7 +231,7 @@ def export_positioning_reports(
                     )
                 except Exception as exc:
                     raise ExportError(
-                        "Could not generate the PDF positioning report. Verify that report dependencies and plotting libraries are available.",
+                        "Could not generate the PDF positioning report. Check the run log for the underlying error; this can be caused by plotting dependencies or invalid report data.",
                         cause=exc,
                     ) from exc
         finally:
