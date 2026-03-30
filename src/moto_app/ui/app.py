@@ -143,7 +143,7 @@ class RunWorker(QThread):
         try:
             ensure_runtime_dirs(self.config)
             run_weekly_pipeline(
-                db_path=self.config.database_dir / "moto_pipeline_tmp.db",
+                db_path=self.config.database_path,
                 source_file=self.source_file,
                 raw_dir=self.config.raw_archive_dir,
                 report_dir=self.config.reports_dir,
@@ -443,7 +443,7 @@ class MotoOperatorWindow(QMainWindow):
         self.home_status = QLabel("No runs yet")
         self.home_snapshot = QLabel("-")
         self.home_error = QLabel("-")
-        self.home_db = QLabel(str(self.config.database_dir / "moto_pipeline_tmp.db"))
+        self.home_db = QLabel(str(self.config.database_path))
         self.home_reports = QLabel(str(self.config.reports_dir))
         self.home_history_count = QLabel("0")
         self.home_outputs_count = QLabel("0")
@@ -1051,7 +1051,7 @@ class MotoOperatorWindow(QMainWindow):
                 "The selected staged snapshot file does not exist. Stage the CSV again or choose another staged snapshot.",
             )
             return
-        db_path = self.config.database_dir / "moto_pipeline_tmp.db"
+        db_path = self.config.database_path
         if not self.replace_snapshot.isChecked():
             duplicate_message = duplicate_snapshot_message(db_path, source_file)
             if duplicate_message is not None:
@@ -1094,7 +1094,7 @@ class MotoOperatorWindow(QMainWindow):
         self.start_button.setEnabled(True)
 
     def _refresh_all(self) -> None:
-        db_path = self.config.database_dir / "moto_pipeline_tmp.db"
+        db_path = self.config.database_path
         self._refresh_staged_snapshots()
         self._refresh_home(db_path)
         self._refresh_history(db_path)
@@ -1134,7 +1134,7 @@ class MotoOperatorWindow(QMainWindow):
                 self.history_table.setItem(idx, col, QTableWidgetItem(str(value)))
 
     def _refresh_outputs_view(self) -> None:
-        db_path = self.config.database_dir / "moto_pipeline_tmp.db"
+        db_path = self.config.database_path
         report_type = self.report_selector.currentData()
         rows = list_current_generated_reports(db_path, report_type=report_type)
         self.outputs_table.setRowCount(len(rows))
