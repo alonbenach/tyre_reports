@@ -9,6 +9,8 @@ $specPath = Join-Path $projectRoot "packaging\MotoWeeklyOperator.spec"
 $distRoot = Join-Path $projectRoot "dist"
 $buildRoot = Join-Path $projectRoot "build"
 $packageRoot = Join-Path $distRoot "MotoWeeklyOperator"
+$sourceMigrationsDir = Join-Path $projectRoot "database\migrations"
+$targetMigrationsDir = Join-Path $packageRoot "database\migrations"
 
 Push-Location $projectRoot
 try {
@@ -30,6 +32,15 @@ try {
     foreach ($relativePath in $directories) {
         $target = Join-Path $packageRoot $relativePath
         New-Item -ItemType Directory -Force -Path $target | Out-Null
+    }
+
+    Get-ChildItem -Path $sourceMigrationsDir -Filter *.sql | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $targetMigrationsDir $_.Name) -Force
+    }
+
+    $copiedMigrations = Get-ChildItem -Path $targetMigrationsDir -Filter *.sql
+    if (-not $copiedMigrations) {
+        throw "No SQL migration files were copied into the packaged database\\migrations folder."
     }
 
     $referenceReadme = @"
