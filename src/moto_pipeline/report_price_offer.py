@@ -71,15 +71,19 @@ def _read_recap_latest(gold_dir: Path) -> pd.DataFrame:
     recap["vs_py_display"] = recap["vs_py_round"].map(
         lambda x: "-" if pd.isna(x) else f"{int(x):+d}"
     )
-    iso = pd.to_datetime(recap["snapshot_date"], errors="coerce").dt.isocalendar()
-    recap["week_label"] = (
-        iso["year"].astype("Int64").astype("string")
-        + "-W"
-        + iso["week"]
-        .astype("Int64")
-        .map(lambda x: f"{int(x):02d}" if pd.notna(x) else "--")
-    )
+    recap["week_label"] = pd.to_datetime(
+        recap["snapshot_date"], errors="coerce"
+    ).map(_year_week_label)
     return recap
+
+
+def _year_week_label(value: object) -> str:
+    """Convert a date-like value into ``YYYY-Www`` safely across pandas dtypes."""
+    dt = pd.to_datetime(value, errors="coerce")
+    if pd.isna(dt):
+        return "<NA>-W--"
+    iso = dt.isocalendar()
+    return f"{int(iso.year)}-W{int(iso.week):02d}"
 
 
 def _read_silver(silver_dir: Path) -> pd.DataFrame:
