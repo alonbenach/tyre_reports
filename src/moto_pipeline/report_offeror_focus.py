@@ -605,15 +605,20 @@ def _draw_pdf_table(
 
     left_align_cols = {"Segment Ref Group", "Key Fitments", "Brand", "Pattern Set", "Size", "First Player"}
     right_align_cols = {"Stock", "Price", "Disc %", "vs LW", "Mark-Up", "Mark-Up vs LW (pp)"}
-    key_fitments_idx = list(display.columns).index("Key Fitments")
-    line_idx = list(display.columns).index("Line")
-    brand_idx = list(display.columns).index("Brand")
-    group_spans = _group_spans(source["_group_base"].astype("string"))
+    column_names = list(display.columns)
+    key_fitments_idx = column_names.index("Key Fitments") if "Key Fitments" in column_names else None
+    line_idx = column_names.index("Line") if "Line" in column_names else None
+    brand_idx = column_names.index("Brand") if "Brand" in column_names else None
+    group_spans = (
+        _group_spans(source["_group_base"].astype("string"))
+        if "_group_base" in source.columns and key_fitments_idx is not None
+        else []
+    )
 
     for row_idx in range(nrows):
         y0 = bottom + body_h - ((row_idx + 1) * row_h)
         for col_idx, column in enumerate(display.columns):
-            if col_idx == key_fitments_idx:
+            if key_fitments_idx is not None and col_idx == key_fitments_idx:
                 continue
             x0 = x_edges[col_idx]
             w = x_edges[col_idx + 1] - x0
@@ -627,19 +632,20 @@ def _draw_pdf_table(
                 align = "right"
             draw_text(text, x0, y0, w, row_h, align=align)
 
-    for start, end in group_spans:
-        top_y = bottom + body_h - (start * row_h)
-        y0 = bottom + body_h - ((end + 1) * row_h)
-        h = top_y - y0
-        x0 = x_edges[key_fitments_idx]
-        w = x_edges[key_fitments_idx + 1] - x0
-        label = str(source.iloc[start]["Key Fitments"])
-        draw_text(label, x0, y0, w, h, align="left")
+    if key_fitments_idx is not None:
+        for start, end in group_spans:
+            top_y = bottom + body_h - (start * row_h)
+            y0 = bottom + body_h - ((end + 1) * row_h)
+            h = top_y - y0
+            x0 = x_edges[key_fitments_idx]
+            w = x_edges[key_fitments_idx + 1] - x0
+            label = str(source.iloc[start]["Key Fitments"])
+            draw_text(label, x0, y0, w, h, align="left")
 
     full_left = x_edges[0]
     full_right = x_edges[-1]
-    line_left = x_edges[line_idx]
-    brand_left = x_edges[brand_idx]
+    line_left = x_edges[line_idx] if line_idx is not None else full_left
+    brand_left = x_edges[brand_idx] if brand_idx is not None else full_left
     dot_style = (0, (1.2, 2.0))
 
     for row_idx in range(1, nrows):
@@ -647,12 +653,12 @@ def _draw_pdf_table(
         curr = source.iloc[row_idx]
         prev = source.iloc[row_idx - 1]
 
-        curr_group = str(curr["_group_base"])
-        prev_group = str(prev["_group_base"])
-        curr_line = str(curr["Line"])
-        prev_line = str(prev["Line"])
-        curr_brand = str(curr["Brand"])
-        prev_brand = str(prev["Brand"])
+        curr_group = str(curr.get("_group_base", ""))
+        prev_group = str(prev.get("_group_base", ""))
+        curr_line = str(curr.get("Line", ""))
+        prev_line = str(prev.get("Line", ""))
+        curr_brand = str(curr.get("Brand", ""))
+        prev_brand = str(prev.get("Brand", ""))
 
         if curr_group != prev_group:
             ax.plot(
