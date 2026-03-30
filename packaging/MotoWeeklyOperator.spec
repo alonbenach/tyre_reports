@@ -6,10 +6,13 @@ from pathlib import Path
 PROJECT_ROOT = Path.cwd()
 ENTRYPOINT = PROJECT_ROOT / "database" / "tools" / "run_app_prod.py"
 ASSETS_DIR = PROJECT_ROOT / "assets"
+MIGRATIONS_DIR = PROJECT_ROOT / "database" / "migrations"
 
 datas = []
 if ASSETS_DIR.exists():
     datas.append((str(ASSETS_DIR), "assets"))
+if MIGRATIONS_DIR.exists():
+    datas.append((str(MIGRATIONS_DIR), "database/migrations"))
 
 pathex = [str(PROJECT_ROOT), str(PROJECT_ROOT / "src")]
 

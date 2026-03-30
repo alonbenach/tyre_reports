@@ -16,6 +16,7 @@ try {
 
     $directories = @(
         "database",
+        "database\migrations",
         "data",
         "data\campaign rules",
         "data\ingest",
@@ -41,6 +42,9 @@ Place the approved reference workbooks for the current motorcycle campaign in th
 Future versions of the app may manage these files through admin workflows, but for now they are maintained manually.
 "@
     Set-Content -Path (Join-Path $packageRoot "data\campaign rules\README.txt") -Value $referenceReadme -Encoding UTF8
+
+    $migrationsReadme = "SQLite migration files are bundled here and used automatically on first launch."
+    Set-Content -Path (Join-Path $packageRoot "database\migrations\README.txt") -Value $migrationsReadme -Encoding UTF8
 
     $intakeReadme = @"
 Stage weekly CSV files here only when working outside the GUI.

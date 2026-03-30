@@ -48,6 +48,7 @@ from moto_app.access_control import (
 )
 from moto_app.app import run_weekly_pipeline
 from moto_app.config import AppConfig, ensure_runtime_dirs, load_config
+from database.tools import DatabasePaths, initialize_database
 from moto_app.exports import list_current_generated_reports, list_generated_reports
 from moto_app.ingest import duplicate_snapshot_message
 from moto_app.ingest import remove_staged_intake_file
@@ -1218,6 +1219,12 @@ def launch_operator_ui(
 ) -> None:
     config = load_config(app_root, environment=environment, config_override_path=config_override_path)
     ensure_runtime_dirs(config)
+    initialize_database(
+        DatabasePaths(
+            db_path=config.database_path,
+            migrations_dir=config.migrations_dir,
+        )
+    )
     app = QApplication.instance() or QApplication(sys.argv)
     window = MotoOperatorWindow(config)
     window.showMaximized()

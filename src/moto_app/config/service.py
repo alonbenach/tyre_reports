@@ -16,6 +16,7 @@ class AppConfig:
     raw_archive_dir: Path
     database_dir: Path
     database_path: Path
+    migrations_dir: Path
     reports_dir: Path
     logs_dir: Path
     assets_dir: Path
@@ -64,6 +65,7 @@ def default_config(app_root: Path | None = None, *, environment: str = "dev") ->
         raw_archive_dir=root / "data" / "raw",
         database_dir=database_dir,
         database_path=database_dir / "moto_pipeline.db",
+        migrations_dir=database_dir / "migrations",
         reports_dir=root / "reports",
         logs_dir=root / "logs",
         assets_dir=root / "assets",
