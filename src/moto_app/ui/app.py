@@ -59,6 +59,11 @@ from moto_app.observability import (
     latest_run_status,
     operator_message_for_exception,
 )
+from moto_app.reference_data import (
+    get_core_reference_status,
+    get_turnover_reference_status,
+    refresh_turnover_reference_data,
+)
 from moto_app.ui.content import APP_TITLE, INSTRUCTIONS_TEXT
 
 REPORT_OPTIONS = [
@@ -175,6 +180,8 @@ class MotoOperatorWindow(QMainWindow):
         self.access_help_detail: QLabel | None = None
         self.admin_enable_button: QPushButton | None = None
         self.recover_lock_button: QPushButton | None = None
+        self.turnover_status_label: QLabel | None = None
+        self.upload_turnover_button: QPushButton | None = None
 
         self.setWindowTitle(APP_TITLE)
         self.resize(1220, 800)
@@ -626,6 +633,10 @@ class MotoOperatorWindow(QMainWindow):
         self.replace_snapshot = QCheckBox("Replace snapshot if it already exists")
         self.replace_snapshot.setChecked(True)
         self.refresh_references = QCheckBox("Refresh reference data before run")
+        self.turnover_status_label = QLabel("Checking turnover reference status...")
+        self.turnover_status_label.setWordWrap(True)
+        self.upload_turnover_button = QPushButton("Upload Turnover Workbook")
+        self.upload_turnover_button.clicked.connect(self._upload_turnover_workbook)
         self.start_button = QPushButton("Start Weekly Run")
         self.start_button.clicked.connect(self._start_run)
         self.selected_source_label = QLabel("No file selected yet.")
@@ -651,7 +662,10 @@ class MotoOperatorWindow(QMainWindow):
         controls_layout.addWidget(self.include_pdf, 14, 0, 1, 2)
         controls_layout.addWidget(self.replace_snapshot, 15, 0, 1, 2)
         controls_layout.addWidget(self.refresh_references, 16, 0, 1, 2)
-        controls_layout.addWidget(self.start_button, 17, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(QLabel("Turnover reference status"), 17, 0, 1, 2)
+        controls_layout.addWidget(self.turnover_status_label, 18, 0, 1, 2)
+        controls_layout.addWidget(self.upload_turnover_button, 19, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(self.start_button, 20, 0, 1, 2, alignment=Qt.AlignLeft)
 
         self._refresh_staged_snapshots()
 
@@ -726,6 +740,8 @@ class MotoOperatorWindow(QMainWindow):
             widget.setEnabled(can_write)
         self.refresh_references.setEnabled(can_write and session.admin_mode_enabled)
         self.remove_staged_button.setEnabled(can_write and session.admin_mode_enabled)
+        if self.upload_turnover_button is not None:
+            self.upload_turnover_button.setEnabled(can_write and session.admin_mode_enabled)
         if not (can_write and session.admin_mode_enabled):
             self.refresh_references.setChecked(False)
 
@@ -913,6 +929,46 @@ class MotoOperatorWindow(QMainWindow):
         if selected:
             self._try_set_csv_path(selected)
 
+    def _upload_turnover_workbook(self) -> None:
+        if self.access_session is None or not self.access_session.admin_mode_enabled:
+            QMessageBox.information(
+                self,
+                APP_TITLE,
+                "Turnover upload is an admin-only action. Enable admin controls first.",
+            )
+            return
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select monthly turnover workbook",
+            str(self.config.reference_source_dir),
+            "Excel files (*.xlsx *.xls);;All files (*.*)",
+        )
+        if not selected:
+            return
+        try:
+            stored_path = self._store_turnover_workbook(Path(selected))
+            refresh_turnover_reference_data(self.config.database_path, stored_path)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_TITLE, operator_message_for_exception(exc))
+            return
+        self._refresh_turnover_status(self.config.database_path)
+        QMessageBox.information(
+            self,
+            APP_TITLE,
+            f"Imported turnover workbook {stored_path.name}. Page 1 overall positioning will use the latest loaded month.",
+        )
+
+    def _store_turnover_workbook(self, source_path: Path) -> Path:
+        if not source_path.exists():
+            raise FileNotFoundError(source_path)
+        if source_path.suffix.lower() not in {".xlsx", ".xls"}:
+            raise ValueError("The selected turnover file is not an Excel workbook. Choose the monthly SQ00 export in .xlsx or .xls format.")
+        self.config.reference_source_dir.mkdir(parents=True, exist_ok=True)
+        target_path = self.config.reference_source_dir / source_path.name
+        if source_path.resolve() != target_path.resolve():
+            shutil.copy2(source_path, target_path)
+        return target_path
+
     def _try_set_csv_path(self, path: str) -> None:
         try:
             self.pending_source_file = Path(path)
@@ -1064,6 +1120,31 @@ class MotoOperatorWindow(QMainWindow):
                 "Reference refresh is an admin-only action. Enable admin controls first if you intentionally need to refresh the reference workbooks.",
             )
             return
+        if not self.refresh_references.isChecked():
+            core_reference_status = get_core_reference_status(db_path)
+            if not core_reference_status.is_ready:
+                QMessageBox.information(
+                    self,
+                    APP_TITLE,
+                    "Core reference data is missing in this app database. Enable admin controls and use 'Refresh reference data before run' before generating reports.",
+                )
+                return
+        turnover_status = get_turnover_reference_status(db_path, snapshot_date=source_file.stem)
+        if turnover_status.is_missing_expected_month:
+            latest_text = turnover_status.latest_period_month or "none loaded yet"
+            answer = QMessageBox.question(
+                self,
+                APP_TITLE,
+                (
+                    f"Turnover reference data for last month ({turnover_status.expected_period_month}) is missing.\n\n"
+                    f"Latest loaded turnover month: {latest_text}.\n"
+                    "If you continue, page 1 overall positioning will fall back to equal fitment weighting until the monthly SQ00 turnover workbook is uploaded"
+                    " or refreshed from campaign rules.\n\n"
+                    "Continue anyway?"
+                ),
+            )
+            if answer != QMessageBox.Yes:
+                return
 
         self.start_button.setEnabled(False)
         self.run_summary.setText(
@@ -1096,10 +1177,33 @@ class MotoOperatorWindow(QMainWindow):
     def _refresh_all(self) -> None:
         db_path = self.config.database_path
         self._refresh_staged_snapshots()
+        self._refresh_turnover_status(db_path)
         self._refresh_home(db_path)
         self._refresh_history(db_path)
         self._refresh_outputs_view()
         self._refresh_run_panel(db_path)
+
+    def _refresh_turnover_status(self, db_path: Path) -> None:
+        if self.turnover_status_label is None:
+            return
+        try:
+            status = get_turnover_reference_status(db_path)
+        except Exception:
+            self.turnover_status_label.setText("Turnover reference status is unavailable.")
+            self.turnover_status_label.setStyleSheet("color: #8a5a00;")
+            return
+        if status.is_missing_expected_month:
+            latest_text = status.latest_period_month or "none loaded yet"
+            self.turnover_status_label.setText(
+                f"Reminder: upload turnover for {status.expected_period_month}. Latest loaded month: {latest_text}."
+            )
+            self.turnover_status_label.setStyleSheet("color: #8a5a00; font-weight: 600;")
+            return
+        source_text = status.latest_source_file_name or "latest workbook"
+        self.turnover_status_label.setText(
+            f"Loaded turnover month {status.latest_period_month} from {source_text}."
+        )
+        self.turnover_status_label.setStyleSheet("color: #12424a;")
 
     def _refresh_home(self, db_path: Path) -> None:
         status = latest_run_status(db_path)

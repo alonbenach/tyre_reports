@@ -4,6 +4,7 @@ import hashlib
 import re
 import sqlite3
 import uuid
+from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from moto_pipeline.canonical import (
     load_campaign_customer_discounts,
     load_canonical_mapping,
     load_price_list,
+    load_turnover_weights,
     normalize_brand,
 )
 
@@ -93,10 +95,147 @@ class ReferenceRefreshResult:
     refreshed_scopes: list[str]
 
 
+@dataclass(frozen=True)
+class TurnoverReferenceStatus:
+    expected_period_month: str
+    latest_period_month: str | None
+    latest_period_end_date: str | None
+    latest_source_file_name: str | None
+    is_missing_expected_month: bool
+
+
+@dataclass(frozen=True)
+class CoreReferenceStatus:
+    missing_scopes: tuple[str, ...]
+
+    @property
+    def is_ready(self) -> bool:
+        return not self.missing_scopes
+
+
 def _replace_table(connection: sqlite3.Connection, table_name: str, rows: list[tuple], insert_sql: str) -> None:
     connection.execute(f"DELETE FROM {table_name}")
     if rows:
         connection.executemany(insert_sql, rows)
+
+
+def _latest_turnover_workbook(source_dir: Path) -> Path | None:
+    candidates = sorted(source_dir.glob("turnover report *.xls*"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+def _previous_month_key(today_value: date | None = None) -> str:
+    today_value = today_value or date.today()
+    year = today_value.year
+    month = today_value.month - 1
+    if month == 0:
+        year -= 1
+        month = 12
+    return f"{year:04d}-{month:02d}"
+
+
+def _previous_month_key_for_snapshot(snapshot_value: object) -> str | None:
+    snapshot_ts = pd.to_datetime(snapshot_value, errors="coerce")
+    if pd.isna(snapshot_ts):
+        return None
+    first_of_month = pd.Timestamp(year=int(snapshot_ts.year), month=int(snapshot_ts.month), day=1)
+    prev_month_end = first_of_month - pd.Timedelta(days=1)
+    return prev_month_end.strftime("%Y-%m")
+
+
+def _parse_turnover_period_from_filename(turnover_file: Path) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    match = re.search(r"(\d{2})-(\d{2})\.(\d{2})(?:\.(\d{4}))?", turnover_file.name)
+    if not match:
+        return None
+    start_day = int(match.group(1))
+    end_day = int(match.group(2))
+    month = int(match.group(3))
+    year = int(match.group(4)) if match.group(4) else pd.Timestamp(turnover_file.stat().st_mtime, unit="s").year
+    try:
+        return pd.Timestamp(year=year, month=month, day=start_day), pd.Timestamp(year=year, month=month, day=end_day)
+    except ValueError:
+        return None
+
+
+def _filename_period_month(turnover_file: Path) -> str | None:
+    match = re.search(r"(20\d{2})-(\d{2})", turnover_file.name)
+    if not match:
+        return None
+    return f"{int(match.group(1)):04d}-{int(match.group(2)):02d}"
+
+
+def _turnover_period(turnover_file: Path) -> tuple[pd.Timestamp, pd.Timestamp]:
+    workbook = pd.read_excel(turnover_file)
+    for col in ("Bill Date", "Pricing dt", "Created on"):
+        if col not in workbook.columns:
+            continue
+        dates = pd.to_datetime(workbook[col], errors="coerce", dayfirst=True)
+        dates = dates.dropna()
+        if not dates.empty:
+            return pd.Timestamp(dates.min()).normalize(), pd.Timestamp(dates.max()).normalize()
+    parsed = _parse_turnover_period_from_filename(turnover_file)
+    if parsed is not None:
+        return parsed
+    raise OperatorFacingError(
+        "Turnover workbook import failed because no monthly date range could be derived. Keep the SAP date columns or use a filename like 'turnover report 01-31.03.xlsx'."
+    )
+
+
+def _prepare_turnover_rows(connection: sqlite3.Connection, turnover_file: Path) -> tuple[str, list[tuple]]:
+    weights = load_turnover_weights(turnover_file=turnover_file)
+    if weights.empty:
+        raise OperatorFacingError(
+            "Turnover workbook import failed because no Pirelli fitment weights could be matched. Check Material values against the current price list and canonical mapping."
+        )
+
+    period_start, period_end = _turnover_period(turnover_file)
+    period_month = period_end.strftime("%Y-%m")
+    filename_period_month = _filename_period_month(turnover_file)
+    if filename_period_month is not None and filename_period_month != period_month:
+        raise OperatorFacingError(
+            "Turnover workbook import failed because the filename month does not match the workbook billing period. "
+            f"Filename suggests {filename_period_month}, but the workbook dates indicate {period_month}. "
+            "Rename the file or upload the correct monthly SQ00 export."
+        )
+    imported_at = connection.execute("SELECT datetime('now')").fetchone()[0]
+    rows = [
+        (
+            turnover_file.stem,
+            "Sheet1",
+            turnover_file.name,
+            period_start.strftime("%Y-%m-%d"),
+            period_end.strftime("%Y-%m-%d"),
+            period_month,
+            str(row.analysis_fitment_key),
+            float(row.turnover_weight),
+            imported_at,
+        )
+        for row in weights.itertuples(index=False)
+    ]
+    return period_month, rows
+
+
+def _replace_turnover_rows(connection: sqlite3.Connection, turnover_file: Path) -> None:
+    period_month, rows = _prepare_turnover_rows(connection, turnover_file)
+    connection.execute("DELETE FROM ref_turnover_weights WHERE period_month = ?", (period_month,))
+    if rows:
+        connection.executemany(
+            """
+            INSERT INTO ref_turnover_weights (
+                reference_version,
+                source_sheet,
+                source_file_name,
+                period_start_date,
+                period_end_date,
+                period_month,
+                analysis_fitment_key,
+                turnover_weight,
+                imported_at_utc
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
 
 
 def _record_refresh(
@@ -130,6 +269,88 @@ def _record_refresh(
             error_message,
         ),
     )
+
+
+def refresh_turnover_reference_data(db_path: Path, turnover_file: Path) -> ReferenceRefreshResult:
+    if not turnover_file.exists():
+        raise OperatorFacingError(f"Turnover import cannot start because the workbook file is missing: {turnover_file}")
+
+    with connect_sqlite(db_path) as connection:
+        try:
+            _replace_turnover_rows(connection, turnover_file)
+            _record_refresh(connection, "turnover_workbook", turnover_file, _file_sha256(turnover_file), "succeeded")
+        except OperatorFacingError as exc:
+            _record_refresh(connection, "turnover_workbook", turnover_file, _file_sha256(turnover_file), "failed", str(exc))
+            raise
+        except Exception as exc:
+            _record_refresh(connection, "turnover_workbook", turnover_file, _file_sha256(turnover_file), "failed", str(exc))
+            raise OperatorFacingError(
+                "Turnover workbook import failed. Check that the SAP SQ00 file still includes Material and billing dates and that Pirelli materials match the current reference price list.",
+                cause=exc,
+            ) from exc
+        connection.commit()
+    return ReferenceRefreshResult(db_path=db_path, refreshed_scopes=["turnover_workbook"])
+
+
+def get_turnover_reference_status(
+    db_path: Path,
+    *,
+    today_value: date | None = None,
+    snapshot_date: object | None = None,
+) -> TurnoverReferenceStatus:
+    expected_period_month = (
+        _previous_month_key_for_snapshot(snapshot_date)
+        if snapshot_date is not None
+        else _previous_month_key(today_value)
+    )
+    if expected_period_month is None:
+        expected_period_month = _previous_month_key(today_value)
+    with connect_sqlite(db_path) as connection:
+        try:
+            row = connection.execute(
+                """
+                SELECT period_month, period_end_date, source_file_name
+                FROM ref_turnover_weights
+                ORDER BY period_month DESC, imported_at_utc DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            expected_count = connection.execute(
+                "SELECT COUNT(*) FROM ref_turnover_weights WHERE period_month = ?",
+                (expected_period_month,),
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            row = None
+            expected_count = 0
+    latest_period_month = str(row[0]) if row and row[0] is not None else None
+    latest_period_end_date = str(row[1]) if row and row[1] is not None else None
+    latest_source_file_name = str(row[2]) if row and row[2] is not None else None
+    return TurnoverReferenceStatus(
+        expected_period_month=expected_period_month,
+        latest_period_month=latest_period_month,
+        latest_period_end_date=latest_period_end_date,
+        latest_source_file_name=latest_source_file_name,
+        is_missing_expected_month=expected_count == 0,
+    )
+
+
+def get_core_reference_status(db_path: Path) -> CoreReferenceStatus:
+    required_tables = {
+        "canonical mapping": "ref_canonical_fitment_mapping",
+        "price list": "ref_price_list",
+        "campaign customers": "ref_campaign_customer_discounts",
+        "campaign pattern extras": "ref_campaign_pattern_extras",
+    }
+    missing_scopes: list[str] = []
+    with connect_sqlite(db_path) as connection:
+        for scope_name, table_name in required_tables.items():
+            try:
+                count = connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            except sqlite3.OperationalError:
+                count = 0
+            if not count:
+                missing_scopes.append(scope_name)
+    return CoreReferenceStatus(missing_scopes=tuple(missing_scopes))
 
 
 def refresh_reference_data(db_path: Path, source_dir: Path) -> ReferenceRefreshResult:
@@ -297,15 +518,25 @@ def refresh_reference_data(db_path: Path, source_dir: Path) -> ReferenceRefreshR
             )
             _record_refresh(connection, "campaign_workbook", campaign_file, _file_sha256(campaign_file), "succeeded")
             scopes.append("campaign_workbook")
+
+            turnover_file = _latest_turnover_workbook(source_dir)
+            if turnover_file is not None:
+                _replace_turnover_rows(connection, turnover_file)
+                _record_refresh(connection, "turnover_workbook", turnover_file, _file_sha256(turnover_file), "succeeded")
+                scopes.append("turnover_workbook")
         except Exception as exc:
             source_file = campaign_file
             if "mapping" in str(exc).lower():
                 source_file = mapping_file
             elif "price" in str(exc).lower():
                 source_file = price_list_file
+            elif "turnover" in str(exc).lower():
+                turnover_file = _latest_turnover_workbook(source_dir)
+                if turnover_file is not None:
+                    source_file = turnover_file
             _record_refresh(connection, "reference_refresh", source_file, _file_sha256(source_file), "failed", str(exc))
             raise OperatorFacingError(
-                "Reference refresh failed. Check that the campaign, canonical mapping, and price list workbooks still match the expected sheet structure.",
+                "Reference refresh failed. Check that the campaign, canonical mapping, price list, and turnover workbooks still match the expected sheet structure.",
                 cause=exc,
             ) from exc
 

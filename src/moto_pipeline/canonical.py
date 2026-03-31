@@ -11,6 +11,12 @@ from rapidfuzz import fuzz
 from .settings import CAMPAIGN_FILE, MAPPING_FILE, PRICE_LIST_FILE
 
 
+def _first_nonempty_text(series: pd.Series) -> str:
+    values = series.astype("string").fillna("").str.strip()
+    nonempty = values[values != ""]
+    return "" if nonempty.empty else str(nonempty.iloc[0])
+
+
 def _norm_text(value: object) -> str:
     """Normalize free text for robust canonical matching.
 
@@ -308,6 +314,84 @@ def load_price_list(price_list_file: Path = PRICE_LIST_FILE) -> pd.DataFrame:
     return pl[
         ["brand", "pattern_name", "pattern_norm", "size_text", "size_root", "segment_reference_group", "list_price", "ipcode"]
     ]
+
+
+def find_turnover_file(campaign_dir: Path | None = None) -> Path | None:
+    """Return the most recently modified turnover workbook, when present."""
+    base_dir = campaign_dir or PRICE_LIST_FILE.parent
+    candidates = sorted(base_dir.glob("turnover report *.xls*"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+def load_turnover_weights(
+    turnover_file: Path | None = None,
+    *,
+    mapping_file: Path = MAPPING_FILE,
+    price_list_file: Path = PRICE_LIST_FILE,
+) -> pd.DataFrame:
+    """Aggregate SQ00 turnover into static fitment weights for positioning rollups.
+
+    The manager request is to weight the report by last month's sales taken from the
+    SAP turnover export. We use ``NETVAL1`` when available because it represents the
+    turnover value directly; if a file lacks that column we fall back to ``QTYBil``.
+    """
+    resolved_turnover_file = turnover_file or find_turnover_file(price_list_file.parent)
+    empty = pd.DataFrame(columns=["analysis_fitment_key", "turnover_weight"])
+    if resolved_turnover_file is None or not resolved_turnover_file.exists():
+        return empty
+
+    turnover = pd.read_excel(resolved_turnover_file)
+    if turnover.empty or "Material" not in turnover.columns:
+        return empty
+
+    weight_col = "NETVAL1" if "NETVAL1" in turnover.columns else "QTYBil"
+    turnover["ipcode"] = pd.to_numeric(turnover["Material"], errors="coerce").astype("Int64")
+    turnover["turnover_weight"] = pd.to_numeric(turnover[weight_col], errors="coerce")
+    turnover = turnover[turnover["ipcode"].notna() & turnover["turnover_weight"].notna()].copy()
+    if turnover.empty:
+        return empty
+
+    mapping = load_canonical_mapping(mapping_file)
+    price_list = load_price_list(price_list_file)
+    fitment_ref = mapping.merge(
+        price_list[["brand", "size_root", "pattern_norm", "ipcode"]],
+        left_on=["brand", "size_root", "pattern_set_norm"],
+        right_on=["brand", "size_root", "pattern_norm"],
+        how="left",
+    )
+    if fitment_ref.empty:
+        return empty
+
+    fitment_ref["analysis_fitment_key"] = fitment_ref["key_fitments"].astype("string").fillna("").str.strip()
+    blank_key = fitment_ref["analysis_fitment_key"] == ""
+    fitment_ref.loc[blank_key, "analysis_fitment_key"] = fitment_ref.loc[blank_key, "size_root"].astype("string").fillna("").str.strip()
+    fitment_ref["ipcode"] = pd.to_numeric(fitment_ref["ipcode"], errors="coerce").astype("Int64")
+    fitment_ref = fitment_ref[
+        fitment_ref["ipcode"].notna()
+        & fitment_ref["analysis_fitment_key"].notna()
+        & (fitment_ref["analysis_fitment_key"].astype("string").str.strip() != "")
+        & fitment_ref["brand"].eq("Pirelli")
+    ].copy()
+    if fitment_ref.empty:
+        return empty
+
+    fitment_ref = (
+        fitment_ref.groupby("ipcode", dropna=False, as_index=False)
+        .agg(analysis_fitment_key=("analysis_fitment_key", _first_nonempty_text))
+    )
+    weighted = turnover.merge(fitment_ref, on="ipcode", how="left")
+    weighted = weighted[weighted["analysis_fitment_key"].notna()].copy()
+    weighted["analysis_fitment_key"] = weighted["analysis_fitment_key"].astype("string").str.strip()
+    weighted = weighted[weighted["analysis_fitment_key"] != ""]
+    if weighted.empty:
+        return empty
+
+    return (
+        weighted.groupby("analysis_fitment_key", dropna=False, as_index=False)
+        .agg(turnover_weight=("turnover_weight", "sum"))
+        .sort_values("analysis_fitment_key")
+        .reset_index(drop=True)
+    )
 
 
 @dataclass
