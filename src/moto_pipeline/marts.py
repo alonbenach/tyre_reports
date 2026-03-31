@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .canonical import load_canonical_mapping
+from .canonical import load_canonical_mapping, load_turnover_weights
 from .settings import FOCUS_BRANDS, GOLD_DIR, RECAP_BRANDS, TOP_COMPETITORS
 
 
@@ -82,7 +82,66 @@ def _analysis_fitment_key(df: pd.DataFrame) -> pd.Series:
     return out
 
 
-def _price_positioning(df: pd.DataFrame) -> pd.DataFrame:
+def _weighted_fitment_rollup(by_fitment: pd.DataFrame, fitment_weights: pd.DataFrame | None) -> pd.DataFrame:
+    """Build weighted overall price metrics from fitment-level rows."""
+    if by_fitment.empty:
+        return pd.DataFrame(
+            columns=[
+                "snapshot_date",
+                "pirelli_median_price",
+                "competitor_median_price",
+                "market_median_price",
+            ]
+        )
+
+    work = by_fitment.copy()
+    work["snapshot_date"] = pd.to_datetime(work["snapshot_date"], errors="coerce")
+    if fitment_weights is None or fitment_weights.empty:
+        work["turnover_weight"] = 1.0
+    else:
+        weight_keys = ["analysis_fitment_key", "turnover_weight"]
+        merge_keys = ["analysis_fitment_key"]
+        if "snapshot_date" in fitment_weights.columns:
+            weight_keys.insert(0, "snapshot_date")
+            merge_keys.insert(0, "snapshot_date")
+        weights = fitment_weights[weight_keys].copy()
+        if "snapshot_date" in weights.columns:
+            weights["snapshot_date"] = pd.to_datetime(weights["snapshot_date"], errors="coerce")
+        weights["turnover_weight"] = pd.to_numeric(weights["turnover_weight"], errors="coerce")
+        work = work.merge(weights, on=merge_keys, how="left")
+        work["turnover_weight"] = work["turnover_weight"].fillna(0.0)
+        positive_by_snapshot = work.groupby("snapshot_date", dropna=False)["turnover_weight"].transform(lambda s: bool((s > 0).any()))
+        work.loc[~positive_by_snapshot, "turnover_weight"] = 1.0
+
+    def _weighted_avg(group: pd.DataFrame, value_col: str) -> float:
+        values = pd.to_numeric(group[value_col], errors="coerce")
+        weights = pd.to_numeric(group["turnover_weight"], errors="coerce").fillna(0.0)
+        mask = values.notna() & weights.gt(0)
+        if mask.any():
+            return float(np.average(values[mask], weights=weights[mask]))
+        if values.notna().any():
+            return float(values[values.notna()].mean())
+        return np.nan
+
+    out = (
+        work.groupby("snapshot_date", dropna=False)
+        .apply(
+            lambda group: pd.Series(
+                {
+                    "pirelli_median_price": _weighted_avg(group, "pirelli_median_price"),
+                    "competitor_median_price": _weighted_avg(group, "competitor_median_price"),
+                    "market_median_price": _weighted_avg(group, "market_median_price"),
+                }
+            ),
+            include_groups=False,
+        )
+        .reset_index()
+    )
+    out["snapshot_date"] = pd.to_datetime(out["snapshot_date"], errors="coerce")
+    return out
+
+
+def _price_positioning(df: pd.DataFrame, fitment_weights: pd.DataFrame | None = None) -> pd.DataFrame:
     """Compute weekly price positioning metrics vs competitor set and market.
 
     Args:
@@ -91,6 +150,8 @@ def _price_positioning(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         Positioning dataframe for overall and fitment granularity.
     """
+    df = df.copy()
+    df["snapshot_date"] = pd.to_datetime(df["snapshot_date"], errors="coerce")
     group_cols = ["snapshot_date", "analysis_fitment_key"]
     per_brand = (
         df.groupby(group_cols + ["brand"], dropna=False)
@@ -123,21 +184,26 @@ def _price_positioning(df: pd.DataFrame) -> pd.DataFrame:
         .agg(median_price=("price_pln", "median"), stock_qty=("stock_qty", "sum"))
         .reset_index()
     )
-    pirelli_overall = overall.loc[overall["brand"] == "Pirelli", ["snapshot_date", "median_price", "stock_qty"]].rename(
-        columns={"median_price": "pirelli_median_price", "stock_qty": "pirelli_stock_qty"}
+    overall_prices = _weighted_fitment_rollup(by_fitment, fitment_weights)
+    pirelli_overall_stock = overall.loc[overall["brand"] == "Pirelli", ["snapshot_date", "stock_qty"]].rename(
+        columns={"stock_qty": "pirelli_stock_qty"}
     )
     comp_overall = (
         overall.loc[overall["brand"].isin(TOP_COMPETITORS)]
         .groupby(["snapshot_date"], dropna=False)
-        .agg(competitor_median_price=("median_price", "median"), competitor_stock_qty=("stock_qty", "sum"))
+        .agg(competitor_stock_qty=("stock_qty", "sum"))
         .reset_index()
     )
     market_overall = (
         df.groupby(["snapshot_date"], dropna=False)
-        .agg(market_median_price=("price_pln", "median"), market_stock_qty=("stock_qty", "sum"))
+        .agg(market_stock_qty=("stock_qty", "sum"))
         .reset_index()
     )
-    overall_pos = pirelli_overall.merge(comp_overall, on="snapshot_date", how="left").merge(
+    for frame in (overall_prices, pirelli_overall_stock, comp_overall, market_overall):
+        frame["snapshot_date"] = pd.to_datetime(frame["snapshot_date"], errors="coerce")
+    overall_pos = overall_prices.merge(pirelli_overall_stock, on="snapshot_date", how="left").merge(
+        comp_overall, on="snapshot_date", how="left"
+    ).merge(
         market_overall, on="snapshot_date", how="left"
     )
     overall_pos["price_gap_vs_comp"] = overall_pos["pirelli_median_price"] - overall_pos["competitor_median_price"]
@@ -388,7 +454,11 @@ def build_gold_marts(logger: logging.Logger, silver_file: Path, gold_dir: Path =
         .reset_index()
     )
 
-    positioning = _price_positioning(df_high[df_high["brand"].isin(["Pirelli", *TOP_COMPETITORS])].copy())
+    turnover_weights = load_turnover_weights()
+    positioning = _price_positioning(
+        df_high[df_high["brand"].isin(["Pirelli", *TOP_COMPETITORS])].copy(),
+        fitment_weights=turnover_weights,
+    )
     positioning = _attach_week_offsets(
         positioning,
         value_col="price_gap_vs_comp",

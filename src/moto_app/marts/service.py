@@ -42,7 +42,67 @@ def _analysis_fitment_key(df: pd.DataFrame) -> pd.Series:
     return out
 
 
-def _price_positioning(df: pd.DataFrame) -> pd.DataFrame:
+def _weighted_fitment_rollup(by_fitment: pd.DataFrame, fitment_weights: pd.DataFrame | None) -> pd.DataFrame:
+    if by_fitment.empty:
+        return pd.DataFrame(
+            columns=[
+                "snapshot_date",
+                "pirelli_median_price",
+                "competitor_median_price",
+                "market_median_price",
+            ]
+        )
+
+    work = by_fitment.copy()
+    work["snapshot_date"] = pd.to_datetime(work["snapshot_date"], errors="coerce")
+    if fitment_weights is None or fitment_weights.empty:
+        work["turnover_weight"] = 1.0
+    else:
+        weight_keys = ["analysis_fitment_key", "turnover_weight"]
+        merge_keys = ["analysis_fitment_key"]
+        if "snapshot_date" in fitment_weights.columns:
+            weight_keys.insert(0, "snapshot_date")
+            merge_keys.insert(0, "snapshot_date")
+        weights = fitment_weights[weight_keys].copy()
+        if "snapshot_date" in weights.columns:
+            weights["snapshot_date"] = pd.to_datetime(weights["snapshot_date"], errors="coerce")
+        weights["turnover_weight"] = pd.to_numeric(weights["turnover_weight"], errors="coerce")
+        work = work.merge(weights, on=merge_keys, how="left")
+        work["turnover_weight"] = work["turnover_weight"].fillna(0.0)
+        positive_by_snapshot = work.groupby("snapshot_date", dropna=False)["turnover_weight"].transform(lambda s: bool((s > 0).any()))
+        work.loc[~positive_by_snapshot, "turnover_weight"] = 1.0
+
+    def _weighted_avg(group: pd.DataFrame, value_col: str) -> float:
+        values = pd.to_numeric(group[value_col], errors="coerce")
+        weights = pd.to_numeric(group["turnover_weight"], errors="coerce").fillna(0.0)
+        mask = values.notna() & weights.gt(0)
+        if mask.any():
+            return float(np.average(values[mask], weights=weights[mask]))
+        if values.notna().any():
+            return float(values[values.notna()].mean())
+        return np.nan
+
+    out = (
+        work.groupby("snapshot_date", dropna=False)
+        .apply(
+            lambda group: pd.Series(
+                {
+                    "pirelli_median_price": _weighted_avg(group, "pirelli_median_price"),
+                    "competitor_median_price": _weighted_avg(group, "competitor_median_price"),
+                    "market_median_price": _weighted_avg(group, "market_median_price"),
+                }
+            ),
+            include_groups=False,
+        )
+        .reset_index()
+    )
+    out["snapshot_date"] = pd.to_datetime(out["snapshot_date"], errors="coerce")
+    return out
+
+
+def _price_positioning(df: pd.DataFrame, fitment_weights: pd.DataFrame | None = None) -> pd.DataFrame:
+    df = df.copy()
+    df["snapshot_date"] = pd.to_datetime(df["snapshot_date"], errors="coerce")
     group_cols = ["snapshot_date", "analysis_fitment_key"]
     per_brand = (
         df.groupby(group_cols + ["brand"], dropna=False)
@@ -75,21 +135,26 @@ def _price_positioning(df: pd.DataFrame) -> pd.DataFrame:
         .agg(median_price=("price_pln", "median"), stock_qty=("stock_qty", "sum"))
         .reset_index()
     )
-    pirelli_overall = overall.loc[overall["brand"] == "Pirelli", ["snapshot_date", "median_price", "stock_qty"]].rename(
-        columns={"median_price": "pirelli_median_price", "stock_qty": "pirelli_stock_qty"}
+    overall_prices = _weighted_fitment_rollup(by_fitment, fitment_weights)
+    pirelli_overall_stock = overall.loc[overall["brand"] == "Pirelli", ["snapshot_date", "stock_qty"]].rename(
+        columns={"stock_qty": "pirelli_stock_qty"}
     )
     comp_overall = (
         overall.loc[overall["brand"].isin(TOP_COMPETITORS)]
         .groupby(["snapshot_date"], dropna=False)
-        .agg(competitor_median_price=("median_price", "median"), competitor_stock_qty=("stock_qty", "sum"))
+        .agg(competitor_stock_qty=("stock_qty", "sum"))
         .reset_index()
     )
     market_overall = (
         df.groupby(["snapshot_date"], dropna=False)
-        .agg(market_median_price=("price_pln", "median"), market_stock_qty=("stock_qty", "sum"))
+        .agg(market_stock_qty=("stock_qty", "sum"))
         .reset_index()
     )
-    overall_pos = pirelli_overall.merge(comp_overall, on="snapshot_date", how="left").merge(
+    for frame in (overall_prices, pirelli_overall_stock, comp_overall, market_overall):
+        frame["snapshot_date"] = pd.to_datetime(frame["snapshot_date"], errors="coerce")
+    overall_pos = overall_prices.merge(pirelli_overall_stock, on="snapshot_date", how="left").merge(
+        comp_overall, on="snapshot_date", how="left"
+    ).merge(
         market_overall, on="snapshot_date", how="left"
     )
     overall_pos["price_gap_vs_comp"] = overall_pos["pirelli_median_price"] - overall_pos["competitor_median_price"]
@@ -153,6 +218,58 @@ def _keyfitment_checkpoint(df: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
+def _load_turnover_weights(connection: sqlite3.Connection, snapshot_dates: pd.Series | None = None) -> pd.DataFrame:
+    try:
+        turnover = pd.read_sql_query(
+            """
+            SELECT period_month, analysis_fitment_key, turnover_weight
+            FROM ref_turnover_weights
+            """,
+            connection,
+        )
+    except sqlite3.OperationalError:
+        return pd.DataFrame(columns=["snapshot_date", "analysis_fitment_key", "turnover_weight"])
+    if turnover.empty:
+        return pd.DataFrame(columns=["snapshot_date", "analysis_fitment_key", "turnover_weight"])
+    if snapshot_dates is None:
+        return pd.DataFrame(columns=["snapshot_date", "analysis_fitment_key", "turnover_weight"])
+
+    snapshots = pd.DataFrame({"snapshot_date": pd.to_datetime(pd.Series(snapshot_dates).dropna().unique(), errors="coerce")})
+    snapshots = snapshots[snapshots["snapshot_date"].notna()].copy()
+    if snapshots.empty:
+        return pd.DataFrame(columns=["snapshot_date", "analysis_fitment_key", "turnover_weight"])
+    snapshots["period_month"] = snapshots["snapshot_date"].map(
+        lambda value: (pd.Timestamp(year=int(value.year), month=int(value.month), day=1) - pd.Timedelta(days=1)).strftime("%Y-%m")
+    )
+    turnover["period_month"] = turnover["period_month"].astype("string")
+    joined = snapshots.merge(turnover, on="period_month", how="left")
+    joined["snapshot_date"] = pd.to_datetime(joined["snapshot_date"], errors="coerce")
+    joined["turnover_weight"] = pd.to_numeric(joined["turnover_weight"], errors="coerce")
+    return joined[["snapshot_date", "analysis_fitment_key", "turnover_weight"]].dropna(subset=["analysis_fitment_key", "turnover_weight"])
+
+
+def _segment_turnover_weights(scoped: pd.DataFrame, connection: sqlite3.Connection) -> pd.DataFrame:
+    turnover_weights = _load_turnover_weights(connection, scoped["snapshot_date"])
+    if turnover_weights.empty:
+        return pd.DataFrame(columns=["snapshot_date", "segment_reference_group", "segment_turnover_weight"])
+
+    pirelli_scope = scoped[scoped["brand"] == "Pirelli"].copy()
+    if pirelli_scope.empty:
+        return pd.DataFrame(columns=["snapshot_date", "segment_reference_group", "segment_turnover_weight"])
+    fitment_segments = (
+        pirelli_scope[["snapshot_date", "segment_reference_group", "analysis_fitment_key"]]
+        .dropna()
+        .drop_duplicates()
+    )
+    fitment_segments["snapshot_date"] = pd.to_datetime(fitment_segments["snapshot_date"], errors="coerce")
+    joined = fitment_segments.merge(turnover_weights, on=["snapshot_date", "analysis_fitment_key"], how="left")
+    joined["turnover_weight"] = pd.to_numeric(joined["turnover_weight"], errors="coerce").fillna(0.0)
+    return (
+        joined.groupby(["snapshot_date", "segment_reference_group"], dropna=False, as_index=False)
+        .agg(segment_turnover_weight=("turnover_weight", "sum"))
+    )
+
+
 def _target_groups(connection: sqlite3.Connection) -> list[str]:
     mapping = pd.read_sql_query(
         """
@@ -176,6 +293,7 @@ def _recap_by_brand_weighted_index(df: pd.DataFrame, connection: sqlite3.Connect
     ].copy()
     if scoped.empty:
         return pd.DataFrame()
+    scoped["snapshot_date"] = pd.to_datetime(scoped["snapshot_date"], errors="coerce")
 
     target_groups = _target_groups(connection)
     if not target_groups:
@@ -196,6 +314,8 @@ def _recap_by_brand_weighted_index(df: pd.DataFrame, connection: sqlite3.Connect
         names=["snapshot_date", "segment_reference_group", "brand"],
     ).to_frame(index=False)
     seg_brand = grid.merge(seg_brand, on=["snapshot_date", "segment_reference_group", "brand"], how="left")
+    seg_weights = _segment_turnover_weights(scoped[scoped["segment_reference_group"].isin(target_groups)].copy(), connection)
+    seg_brand = seg_brand.merge(seg_weights, on=["snapshot_date", "segment_reference_group"], how="left")
 
     pirelli_seg = seg_brand[seg_brand["brand"] == "Pirelli"][
         ["snapshot_date", "segment_reference_group", "median_price", "stock_qty"]
@@ -212,15 +332,33 @@ def _recap_by_brand_weighted_index(df: pd.DataFrame, connection: sqlite3.Connect
     )
     seg_brand["median_price_filled"] = seg_brand["median_price_filled"].fillna(seg_brand["pirelli_seg_price"])
     seg_brand["is_imputed_segment"] = seg_brand["median_price"].isna()
+    seg_brand["segment_turnover_weight"] = pd.to_numeric(seg_brand["segment_turnover_weight"], errors="coerce").fillna(0.0)
+    positive_turnover = seg_brand.groupby("snapshot_date", dropna=False)["segment_turnover_weight"].transform(lambda s: bool((s > 0).any()))
+    seg_brand.loc[~positive_turnover, "segment_turnover_weight"] = 1.0
+
+    def _weighted_avg(group: pd.DataFrame, value_col: str) -> float:
+        values = pd.to_numeric(group[value_col], errors="coerce")
+        weights = pd.to_numeric(group["segment_turnover_weight"], errors="coerce").fillna(0.0)
+        mask = values.notna() & weights.gt(0)
+        if mask.any():
+            return float(np.average(values[mask], weights=weights[mask]))
+        if values.notna().any():
+            return float(values[values.notna()].mean())
+        return np.nan
 
     recap = (
         seg_brand.groupby(["snapshot_date", "brand"], dropna=False)
-        .agg(
-            weighted_brand_price=("median_price_filled", "mean"),
-            weighted_pirelli_price=("pirelli_seg_price", "mean"),
-            used_weight=("pirelli_seg_weight", "sum"),
-            fitments_used=("segment_reference_group", "nunique"),
-            imputed_segments=("is_imputed_segment", "sum"),
+        .apply(
+            lambda group: pd.Series(
+                {
+                    "weighted_brand_price": _weighted_avg(group, "median_price_filled"),
+                    "weighted_pirelli_price": _weighted_avg(group, "pirelli_seg_price"),
+                    "used_weight": float(pd.to_numeric(group["segment_turnover_weight"], errors="coerce").fillna(0.0).sum()),
+                    "fitments_used": int(group["segment_reference_group"].nunique()),
+                    "imputed_segments": int(group["is_imputed_segment"].sum()),
+                }
+            ),
+            include_groups=False,
         )
         .reset_index()
     )
@@ -397,7 +535,11 @@ def build_gold_marts(db_path: Path) -> GoldBuildResult:
             .reset_index()
         )
 
-        positioning = _price_positioning(df_high[df_high["brand"].isin(["Pirelli", *TOP_COMPETITORS])].copy())
+        turnover_weights = _load_turnover_weights(connection, df_high["snapshot_date"])
+        positioning = _price_positioning(
+            df_high[df_high["brand"].isin(["Pirelli", *TOP_COMPETITORS])].copy(),
+            fitment_weights=turnover_weights,
+        )
         positioning = _attach_week_offsets(positioning, value_col="price_gap_vs_comp", keys=["granularity", "analysis_fitment_key"])
         positioning = _attach_week_offsets(positioning, value_col="pirelli_stock_qty", keys=["granularity", "analysis_fitment_key"])
 

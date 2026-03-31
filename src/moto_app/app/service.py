@@ -8,7 +8,11 @@ from moto_app.exports import ExportResult, export_offeror_focus_reports, export_
 from moto_app.ingest import ingest_weekly_csv
 from moto_app.marts import build_gold_marts
 from moto_app.observability import RunTracker
-from moto_app.reference_data import refresh_reference_data
+from moto_app.reference_data import (
+    get_core_reference_status,
+    get_turnover_reference_status,
+    refresh_reference_data,
+)
 from moto_app.transform import build_silver_snapshot
 
 
@@ -56,6 +60,34 @@ def run_weekly_pipeline(
                 f"refresh_references={refresh_references}"
             ),
         )
+        if not refresh_references:
+            core_reference_status = get_core_reference_status(db_path)
+            if not core_reference_status.is_ready:
+                missing = ", ".join(core_reference_status.missing_scopes)
+                raise ValueError(
+                    "Reference data is missing for this app database. Refresh reference data before running the weekly pipeline. "
+                    f"Missing: {missing}."
+                )
+        turnover_status = get_turnover_reference_status(db_path, snapshot_date=snapshot_date)
+        if turnover_status.is_missing_expected_month:
+            tracker.log_step(
+                context,
+                "turnover",
+                (
+                    f"Missing turnover reference for expected month {turnover_status.expected_period_month}. "
+                    f"Latest loaded month={turnover_status.latest_period_month or 'none'}. "
+                    "Page 1 recap and overall positioning will fall back to equal weighting."
+                ),
+            )
+        else:
+            tracker.log_step(
+                context,
+                "turnover",
+                (
+                    f"Using turnover reference month {turnover_status.expected_period_month} "
+                    f"for snapshot {snapshot_date} from {turnover_status.latest_source_file_name or 'SQL reference store'}."
+                ),
+            )
         if refresh_references:
             step_started = perf_counter()
             if reference_dir is None:
