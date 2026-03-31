@@ -5,6 +5,7 @@ import sys
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,7 @@ from database.tools import DatabasePaths, initialize_database  # noqa: E402
 from moto_app.app import run_weekly_pipeline  # noqa: E402
 from moto_app.ingest import DuplicateSnapshotError  # noqa: E402
 from moto_app.observability import latest_run_status  # noqa: E402
+from moto_app.reference_data.service import CoreReferenceStatus  # noqa: E402
 from tests.reference_seed import seed_reference_tables  # noqa: E402
 
 
@@ -49,16 +51,20 @@ class BackendPipelineTests(unittest.TestCase):
     def test_weekly_run_records_status_logs_and_outputs(self) -> None:
         tmp_root, db_path, source_file, raw_dir, report_dir, log_dir = self._prepare_runtime()
         try:
-            result = run_weekly_pipeline(
-                db_path=db_path,
-                source_file=source_file,
-                raw_dir=raw_dir,
-                report_dir=report_dir,
-                log_dir=log_dir,
-                include_pdf=False,
-                replace_snapshot=True,
-                refresh_references=False,
-            )
+            with patch(
+                "moto_app.app.service.get_core_reference_status",
+                return_value=CoreReferenceStatus(missing_scopes=()),
+            ):
+                result = run_weekly_pipeline(
+                    db_path=db_path,
+                    source_file=source_file,
+                    raw_dir=raw_dir,
+                    report_dir=report_dir,
+                    log_dir=log_dir,
+                    include_pdf=False,
+                    replace_snapshot=True,
+                    refresh_references=False,
+                )
 
             status = latest_run_status(db_path)
             self.assertEqual("succeeded", status.status)
@@ -76,29 +82,37 @@ class BackendPipelineTests(unittest.TestCase):
     def test_duplicate_snapshot_is_blocked_without_replace(self) -> None:
         tmp_root, db_path, source_file, raw_dir, report_dir, log_dir = self._prepare_runtime()
         try:
-            first = run_weekly_pipeline(
-                db_path=db_path,
-                source_file=source_file,
-                raw_dir=raw_dir,
-                report_dir=report_dir,
-                log_dir=log_dir,
-                include_pdf=False,
-                replace_snapshot=True,
-                refresh_references=False,
-            )
-            self.assertEqual("2026-02-10", first.snapshot_date)
-
-            with self.assertRaises(DuplicateSnapshotError):
-                run_weekly_pipeline(
+            with patch(
+                "moto_app.app.service.get_core_reference_status",
+                return_value=CoreReferenceStatus(missing_scopes=()),
+            ):
+                first = run_weekly_pipeline(
                     db_path=db_path,
                     source_file=source_file,
                     raw_dir=raw_dir,
                     report_dir=report_dir,
                     log_dir=log_dir,
                     include_pdf=False,
-                    replace_snapshot=False,
+                    replace_snapshot=True,
                     refresh_references=False,
                 )
+            self.assertEqual("2026-02-10", first.snapshot_date)
+
+            with patch(
+                "moto_app.app.service.get_core_reference_status",
+                return_value=CoreReferenceStatus(missing_scopes=()),
+            ):
+                with self.assertRaises(DuplicateSnapshotError):
+                    run_weekly_pipeline(
+                        db_path=db_path,
+                        source_file=source_file,
+                        raw_dir=raw_dir,
+                        report_dir=report_dir,
+                        log_dir=log_dir,
+                        include_pdf=False,
+                        replace_snapshot=False,
+                        refresh_references=False,
+                    )
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)
 

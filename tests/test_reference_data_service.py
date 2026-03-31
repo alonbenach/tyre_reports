@@ -189,6 +189,43 @@ class ReferenceDataRefreshTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)
 
+    def test_core_reference_status_allows_empty_pattern_extras(self) -> None:
+        tmp_root, db_path, source_dir = self._prepare_runtime()
+        try:
+            mapping = pd.DataFrame(
+                [{"brand": "Pirelli", "pattern_set": "Angel GT", "pattern_set_norm": "ANGEL GT", "segment_reference_group": "706", "key_fitments": "120/70 17 & 180/55 17", "size_text": "120/70 ZR17", "size_root": "120/70 17"}]
+            )
+            price_list = pd.DataFrame(
+                [{"brand": "Pirelli", "pattern_name": "Angel GT", "pattern_norm": "ANGEL GT", "size_text": "120/70 ZR17", "size_root": "120/70 17", "segment_reference_group": "706", "list_price": 1000.0, "ipcode": "1234567890"}]
+            )
+            customer_discounts = pd.DataFrame(
+                [{"customer": "Platforma Opon", "additional_discount_for_pattern_sets": 0.03, "all_in_discount": 0.25}]
+            )
+            empty_pattern_extras = pd.DataFrame(
+                columns=["pattern_set", "short_form", "pattern_set_norm", "extra_discount"]
+            )
+            with (
+                patch("moto_app.reference_data.service.load_canonical_mapping", return_value=mapping),
+                patch("moto_app.reference_data.service.load_price_list", return_value=price_list),
+                patch("moto_app.reference_data.service.load_campaign_customer_discounts", return_value=customer_discounts),
+                patch("moto_app.reference_data.service._read_campaign_pattern_extras", return_value=empty_pattern_extras),
+                patch("moto_app.reference_data.service._file_sha256", return_value="sha"),
+            ):
+                refresh_reference_data(db_path=db_path, source_dir=source_dir)
+
+            with connect_sqlite(db_path) as connection:
+                self.assertEqual(
+                    0,
+                    connection.execute(
+                        "SELECT COUNT(*) FROM ref_campaign_pattern_extras"
+                    ).fetchone()[0],
+                )
+
+            status = get_core_reference_status(db_path)
+            self.assertTrue(status.is_ready)
+        finally:
+            shutil.rmtree(tmp_root, ignore_errors=True)
+
     def test_refresh_turnover_reference_data_persists_weights_and_status(self) -> None:
         tmp_root, db_path, source_dir = self._prepare_runtime()
         turnover_file = source_dir / "turnover report 01-31.03.xlsx"

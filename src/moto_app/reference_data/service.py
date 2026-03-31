@@ -339,7 +339,6 @@ def get_core_reference_status(db_path: Path) -> CoreReferenceStatus:
         "canonical mapping": "ref_canonical_fitment_mapping",
         "price list": "ref_price_list",
         "campaign customers": "ref_campaign_customer_discounts",
-        "campaign pattern extras": "ref_campaign_pattern_extras",
     }
     missing_scopes: list[str] = []
     with connect_sqlite(db_path) as connection:
