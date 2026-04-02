@@ -4,6 +4,7 @@ import csv
 import hashlib
 import shutil
 import sqlite3
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -160,9 +161,20 @@ def _copy_to_raw_snapshot(src_file: Path, raw_dir: Path, snapshot_date: str) -> 
     return target_file
 
 
+def _configure_csv_field_limit() -> None:
+    max_field_size = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(max_field_size)
+            return
+        except OverflowError:
+            max_field_size //= 10
+
+
 def _count_rows(file_path: Path) -> tuple[int, int]:
     total_rows = 0
     moto_rows = 0
+    _configure_csv_field_limit()
     with file_path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
         reader = csv.DictReader(handle, delimiter=";")
         for row in reader:
