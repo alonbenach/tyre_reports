@@ -5,7 +5,7 @@ from pathlib import Path
 from time import perf_counter
 
 from moto_app.exports import ExportResult, export_offeror_focus_reports, export_positioning_reports
-from moto_app.ingest import ingest_weekly_csv
+from moto_app.ingest import ingest_weekly_csv, scan_weekly_csv
 from moto_app.marts import build_gold_marts
 from moto_app.observability import RunTracker
 from moto_app.reference_data import (
@@ -39,7 +39,8 @@ def run_weekly_pipeline(
     refresh_references: bool = False,
     reference_dir: Path | None = None,
 ) -> WeeklyRunResult:
-    snapshot_date = source_file.stem
+    scan_result = scan_weekly_csv(source_file)
+    snapshot_date = scan_result.snapshot_date
     tracker = RunTracker(db_path=db_path, log_dir=log_dir)
     context = tracker.start_run(
         snapshot_date=snapshot_date,
@@ -108,6 +109,7 @@ def run_weekly_pipeline(
             raw_dir=raw_dir,
             run_id=context.run_id,
             replace_snapshot=replace_snapshot,
+            scan_result=scan_result,
         )
         stage_durations["ingestion"] = round(perf_counter() - step_started, 2)
         stage_summaries["ingestion"] = (

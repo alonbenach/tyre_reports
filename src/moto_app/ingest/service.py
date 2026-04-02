@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import csv
 import hashlib
+import re
 import shutil
 import sqlite3
-import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import ParserError
 
 from moto_app.db.runtime import connect_sqlite
 from moto_app.observability import OperatorFacingError
@@ -87,6 +87,13 @@ class IngestionResult:
     duplicate_policy: str
 
 
+@dataclass(frozen=True)
+class WeeklyCsvScanResult:
+    snapshot_date: str
+    row_count_total: int
+    row_count_motorcycle: int
+
+
 def remove_staged_intake_file(intake_dir: Path, snapshot_date: str) -> Path:
     target_path = intake_dir / f"{snapshot_date}.csv"
     if not target_path.exists():
@@ -98,7 +105,7 @@ def remove_staged_intake_file(intake_dir: Path, snapshot_date: str) -> Path:
 
 
 def duplicate_snapshot_message(db_path: Path, source_file: Path) -> str | None:
-    snapshot_date = _parse_snapshot_date(source_file)
+    snapshot_date = scan_weekly_csv(source_file).snapshot_date
     source_sha256 = _file_sha256(source_file)
     with connect_sqlite(db_path) as connection:
         exists, existing_sha256 = _existing_snapshot_info(connection, snapshot_date)
@@ -123,11 +130,7 @@ def _file_sha256(file_path: Path) -> str:
     return digest.hexdigest()
 
 
-def _parse_snapshot_date(file_path: Path) -> str:
-    return file_path.stem
-
-
-def _validate_source_file(file_path: Path) -> tuple[str, list[str]]:
+def _validate_source_file(file_path: Path) -> list[str]:
     if not file_path.exists():
         raise OperatorFacingError(
             f"The weekly CSV could not be found: {file_path}"
@@ -137,7 +140,6 @@ def _validate_source_file(file_path: Path) -> tuple[str, list[str]]:
             f"The selected input must be a CSV file. Received: {file_path.name}"
         )
 
-    snapshot_date = _parse_snapshot_date(file_path)
     header = pd.read_csv(
         file_path,
         sep=";",
@@ -150,7 +152,7 @@ def _validate_source_file(file_path: Path) -> tuple[str, list[str]]:
         raise OperatorFacingError(
             f"The weekly CSV is missing required columns: {missing}. Export the file again from Platforma Opon and retry."
         )
-    return snapshot_date, list(header.columns)
+    return list(header.columns)
 
 
 def _copy_to_raw_snapshot(src_file: Path, raw_dir: Path, snapshot_date: str) -> Path:
@@ -161,27 +163,23 @@ def _copy_to_raw_snapshot(src_file: Path, raw_dir: Path, snapshot_date: str) -> 
     return target_file
 
 
-def _configure_csv_field_limit() -> None:
-    max_field_size = sys.maxsize
-    while True:
-        try:
-            csv.field_size_limit(max_field_size)
-            return
-        except OverflowError:
-            max_field_size //= 10
-
-
-def _count_rows(file_path: Path) -> tuple[int, int]:
-    total_rows = 0
-    moto_rows = 0
-    _configure_csv_field_limit()
-    with file_path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter=";")
-        for row in reader:
-            total_rows += 1
-            if row.get("type") == MOTORCYCLE_TYPE:
-                moto_rows += 1
-    return total_rows, moto_rows
+def _parse_snapshot_dates(values: pd.Series) -> pd.Series:
+    normalized = values.astype("string").str.strip()
+    parsed = pd.Series(pd.NaT, index=normalized.index, dtype="datetime64[ns]")
+    formats = (
+        "%d.%m.%Y",
+        "%Y-%m-%d",
+    )
+    for date_format in formats:
+        remaining = normalized[parsed.isna()]
+        if remaining.empty:
+            break
+        parsed.loc[remaining.index] = pd.to_datetime(
+            remaining,
+            format=date_format,
+            errors="coerce",
+        )
+    return parsed
 
 
 def _existing_snapshot_info(connection: sqlite3.Connection, snapshot_date: str) -> tuple[bool, str | None]:
@@ -207,16 +205,93 @@ def _replace_snapshot(connection: sqlite3.Connection, snapshot_date: str) -> Non
     )
 
 
-def _read_motorcycle_rows(file_path: Path, snapshot_date: str) -> list[tuple]:
-    df = pd.read_csv(
-        file_path,
-        sep=";",
-        usecols=INPUT_COLUMNS,
-        dtype="string",
-        encoding="utf-8",
-        encoding_errors="replace",
-        low_memory=False,
+def _format_csv_parser_error(error: ParserError) -> str:
+    message = str(error)
+    row_match = re.search(r"row (\d+)", message)
+    row_hint = f" near row {row_match.group(1)}" if row_match else ""
+    if "EOF inside string" in message or "unexpected end of data" in message:
+        return (
+            "The weekly CSV appears to contain an unclosed quoted value"
+            f"{row_hint}. Export the file again from Platforma Opon and retry."
+        )
+    return (
+        "The weekly CSV could not be parsed cleanly"
+        f"{row_hint}. Export the file again from Platforma Opon and retry."
     )
+
+
+def scan_weekly_csv(file_path: Path) -> WeeklyCsvScanResult:
+    _validate_source_file(file_path)
+    total_rows = 0
+    motorcycle_rows = 0
+    snapshot_dates: set[str] = set()
+
+    try:
+        chunks = pd.read_csv(
+            file_path,
+            sep=";",
+            usecols=["date", "type"],
+            dtype="string",
+            encoding="utf-8",
+            encoding_errors="replace",
+            low_memory=False,
+            chunksize=50000,
+        )
+        for chunk in chunks:
+            total_rows += len(chunk)
+            motorcycle_rows += int((chunk["type"] == MOTORCYCLE_TYPE).sum())
+
+            snapshot_date_values = chunk["date"].astype("string").str.strip()
+            present_values = snapshot_date_values[snapshot_date_values.notna() & snapshot_date_values.ne("")]
+            if present_values.empty:
+                continue
+
+            parsed = _parse_snapshot_dates(present_values)
+            invalid_values = present_values[parsed.isna()]
+            if not invalid_values.empty:
+                raise OperatorFacingError(
+                    "The weekly CSV contains an invalid signature date value: "
+                    f"{invalid_values.iloc[0]!r}. Export the file again from Platforma Opon and retry."
+                )
+            snapshot_dates.update(parsed.dt.strftime("%Y-%m-%d").tolist())
+    except ParserError as error:
+        raise OperatorFacingError(_format_csv_parser_error(error)) from error
+
+    if total_rows == 0:
+        raise OperatorFacingError(
+            "The weekly CSV contains no data rows. Export the file again from Platforma Opon and retry."
+        )
+    if not snapshot_dates:
+        raise OperatorFacingError(
+            "The weekly CSV does not contain any usable signature date values. Export the file again from Platforma Opon and retry."
+        )
+    if len(snapshot_dates) > 1:
+        sample_dates = ", ".join(sorted(snapshot_dates)[:3])
+        raise OperatorFacingError(
+            "The weekly CSV contains multiple signature dates "
+            f"({sample_dates}). Export one weekly snapshot at a time and retry."
+        )
+
+    return WeeklyCsvScanResult(
+        snapshot_date=next(iter(snapshot_dates)),
+        row_count_total=total_rows,
+        row_count_motorcycle=motorcycle_rows,
+    )
+
+
+def _read_motorcycle_rows(file_path: Path, snapshot_date: str) -> list[tuple]:
+    try:
+        df = pd.read_csv(
+            file_path,
+            sep=";",
+            usecols=INPUT_COLUMNS,
+            dtype="string",
+            encoding="utf-8",
+            encoding_errors="replace",
+            low_memory=False,
+        )
+    except ParserError as error:
+        raise OperatorFacingError(_format_csv_parser_error(error)) from error
     df = df.loc[df["type"] == MOTORCYCLE_TYPE].copy()
     df = df.where(df.notna(), None)
     imported_at = pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d %H:%M:%S")
@@ -261,12 +336,15 @@ def ingest_weekly_csv(
     raw_dir: Path,
     run_id: str | None = None,
     replace_snapshot: bool = False,
+    scan_result: WeeklyCsvScanResult | None = None,
 ) -> IngestionResult:
-    snapshot_date, _ = _validate_source_file(source_file)
+    scan_result = scan_result or scan_weekly_csv(source_file)
+    snapshot_date = scan_result.snapshot_date
     raw_dir.mkdir(parents=True, exist_ok=True)
     import_id = str(uuid.uuid4())
     source_sha256 = _file_sha256(source_file)
-    row_count_total, row_count_motorcycle = _count_rows(source_file)
+    row_count_total = scan_result.row_count_total
+    row_count_motorcycle = scan_result.row_count_motorcycle
 
     with connect_sqlite(db_path) as connection:
         connection.execute("BEGIN IMMEDIATE")

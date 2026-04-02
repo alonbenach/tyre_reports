@@ -6,14 +6,12 @@ from pathlib import Path
 
 from datetime import date
 
-from PySide6.QtCore import QDate, QThread, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QThread, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QPalette, QTextCursor
 from PySide6.QtWidgets import (
-    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QComboBox,
-    QDateEdit,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -52,6 +50,8 @@ from database.tools import DatabasePaths, initialize_database
 from moto_app.exports import list_current_generated_reports, list_generated_reports
 from moto_app.ingest import duplicate_snapshot_message
 from moto_app.ingest import remove_staged_intake_file
+from moto_app.ingest import scan_weekly_csv
+from moto_app.ingest.service import WeeklyCsvScanResult
 from moto_app.observability import (
     YearCoverage,
     list_runs,
@@ -119,11 +119,6 @@ class CsvDropZone(QFrame):
         return None
 
 
-class SnapshotDateEdit(QDateEdit):
-    def wheelEvent(self, event) -> None:  # type: ignore[override]
-        event.ignore()
-
-
 class RunWorker(QThread):
     finished_ok = Signal()
     failed = Signal(str)
@@ -171,6 +166,7 @@ class MotoOperatorWindow(QMainWindow):
         self.access_session: AccessSession | None = None
         self.last_log_path: Path | None = None
         self.pending_source_file: Path | None = None
+        self.pending_scan_result: WeeklyCsvScanResult | None = None
         self.selected_source_label: QLabel | None = None
         self.staged_name_label: QLabel | None = None
         self.coverage_cards_layout: QHBoxLayout | None = None
@@ -609,15 +605,7 @@ class MotoOperatorWindow(QMainWindow):
         controls = QGroupBox("Weekly Run Controls")
         controls_layout = QGridLayout(controls)
 
-        self.snapshot_date_input = SnapshotDateEdit()
-        self.snapshot_date_input.setCalendarPopup(True)
-        self.snapshot_date_input.setDisplayFormat("yyyy-MM-dd")
-        self.snapshot_date_input.setDate(QDate.currentDate())
-        self.snapshot_date_input.setButtonSymbols(QAbstractSpinBox.UpDownArrows)
-        self.snapshot_date_input.setKeyboardTracking(False)
-        self.snapshot_date_input.lineEdit().setReadOnly(True)
-        self.snapshot_date_input.dateChanged.connect(self._on_snapshot_date_changed)
-        self.csv_path = QLineEdit(str(self._staged_target_path()))
+        self.csv_path = QLineEdit("")
         self.csv_path.setReadOnly(True)
         self.csv_drop_zone = CsvDropZone()
         self.csv_drop_zone.file_dropped.connect(self._try_set_csv_path)
@@ -641,31 +629,29 @@ class MotoOperatorWindow(QMainWindow):
         self.start_button.clicked.connect(self._start_run)
         self.selected_source_label = QLabel("No file selected yet.")
         self.selected_source_label.setWordWrap(True)
-        self.staged_name_label = QLabel(self._selected_snapshot_date() + ".csv")
+        self.staged_name_label = QLabel("No CSV scanned yet.")
         self.staged_name_label.setWordWrap(True)
 
         controls_layout.addWidget(QLabel("1. Choose weekly CSV"), 0, 0, 1, 2)
         controls_layout.addWidget(self.csv_drop_zone, 1, 0, 1, 2)
-        controls_layout.addWidget(QLabel("Snapshot date for staging"), 2, 0, 1, 2)
-        controls_layout.addWidget(self.snapshot_date_input, 3, 0, 1, 1, alignment=Qt.AlignLeft)
-        controls_layout.addWidget(QLabel("Pending source file"), 4, 0, 1, 2)
-        controls_layout.addWidget(self.selected_source_label, 5, 0, 1, 2)
-        controls_layout.addWidget(QLabel("Staged filename"), 6, 0, 1, 2)
-        controls_layout.addWidget(self.staged_name_label, 7, 0, 1, 2)
-        controls_layout.addWidget(QLabel("Staged intake path"), 8, 0, 1, 2)
-        controls_layout.addWidget(self.csv_path, 9, 0)
-        controls_layout.addWidget(self.browse_button, 9, 1)
-        controls_layout.addWidget(self.stage_button, 10, 0, 1, 2, alignment=Qt.AlignLeft)
-        controls_layout.addWidget(QLabel("2. Select staged snapshot to run"), 11, 0, 1, 2)
-        controls_layout.addWidget(self.run_snapshot_selector, 12, 0, 1, 2)
-        controls_layout.addWidget(self.remove_staged_button, 13, 0, 1, 2, alignment=Qt.AlignLeft)
-        controls_layout.addWidget(self.include_pdf, 14, 0, 1, 2)
-        controls_layout.addWidget(self.replace_snapshot, 15, 0, 1, 2)
-        controls_layout.addWidget(self.refresh_references, 16, 0, 1, 2)
-        controls_layout.addWidget(QLabel("Turnover reference status"), 17, 0, 1, 2)
-        controls_layout.addWidget(self.turnover_status_label, 18, 0, 1, 2)
-        controls_layout.addWidget(self.upload_turnover_button, 19, 0, 1, 2, alignment=Qt.AlignLeft)
-        controls_layout.addWidget(self.start_button, 20, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(QLabel("Pending source file"), 2, 0, 1, 2)
+        controls_layout.addWidget(self.selected_source_label, 3, 0, 1, 2)
+        controls_layout.addWidget(QLabel("Detected snapshot date from signature date"), 4, 0, 1, 2)
+        controls_layout.addWidget(self.staged_name_label, 5, 0, 1, 2)
+        controls_layout.addWidget(QLabel("Staged intake path"), 6, 0, 1, 2)
+        controls_layout.addWidget(self.csv_path, 7, 0)
+        controls_layout.addWidget(self.browse_button, 7, 1)
+        controls_layout.addWidget(self.stage_button, 8, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(QLabel("2. Select staged CSV to run"), 9, 0, 1, 2)
+        controls_layout.addWidget(self.run_snapshot_selector, 10, 0, 1, 2)
+        controls_layout.addWidget(self.remove_staged_button, 11, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(self.include_pdf, 12, 0, 1, 2)
+        controls_layout.addWidget(self.replace_snapshot, 13, 0, 1, 2)
+        controls_layout.addWidget(self.refresh_references, 14, 0, 1, 2)
+        controls_layout.addWidget(QLabel("Turnover reference status"), 15, 0, 1, 2)
+        controls_layout.addWidget(self.turnover_status_label, 16, 0, 1, 2)
+        controls_layout.addWidget(self.upload_turnover_button, 17, 0, 1, 2, alignment=Qt.AlignLeft)
+        controls_layout.addWidget(self.start_button, 18, 0, 1, 2, alignment=Qt.AlignLeft)
 
         self._refresh_staged_snapshots()
 
@@ -731,7 +717,6 @@ class MotoOperatorWindow(QMainWindow):
             self.browse_button,
             self.stage_button,
             self.remove_staged_button,
-            self.snapshot_date_input,
             self.run_snapshot_selector,
             self.include_pdf,
             self.replace_snapshot,
@@ -971,10 +956,25 @@ class MotoOperatorWindow(QMainWindow):
 
     def _try_set_csv_path(self, path: str) -> None:
         try:
-            self.pending_source_file = Path(path)
+            source_file = Path(path)
+            scan_result = scan_weekly_csv(source_file)
+            self.pending_source_file = source_file
+            self.pending_scan_result = scan_result
             if self.selected_source_label is not None:
-                self.selected_source_label.setText(self.pending_source_file.name)
+                self.selected_source_label.setText(
+                    f"{source_file.name} ready to stage. Scan passed with detected snapshot {scan_result.snapshot_date}."
+                )
+            if self.staged_name_label is not None:
+                self.staged_name_label.setText(f"{scan_result.snapshot_date}.csv")
+            self._set_csv_path(str(self._staged_target_path(scan_result.snapshot_date)))
         except Exception as exc:
+            self.pending_source_file = None
+            self.pending_scan_result = None
+            if self.selected_source_label is not None:
+                self.selected_source_label.setText("No file selected yet.")
+            if self.staged_name_label is not None:
+                self.staged_name_label.setText("No CSV scanned yet.")
+            self._set_csv_path("")
             QMessageBox.critical(
                 self,
                 APP_TITLE,
@@ -984,16 +984,8 @@ class MotoOperatorWindow(QMainWindow):
     def _set_csv_path(self, path: str) -> None:
         self.csv_path.setText(path)
 
-    def _on_snapshot_date_changed(self) -> None:
-        if self.staged_name_label is not None:
-            self.staged_name_label.setText(self._staged_target_path().name)
-        self._set_csv_path(str(self._staged_target_path()))
-
-    def _selected_snapshot_date(self) -> str:
-        return self.snapshot_date_input.date().toString("yyyy-MM-dd")
-
-    def _staged_target_path(self) -> Path:
-        return self.config.intake_dir / f"{self._selected_snapshot_date()}.csv"
+    def _staged_target_path(self, snapshot_date: str) -> Path:
+        return self.config.intake_dir / f"{snapshot_date}.csv"
 
     def _stage_pending_source(self) -> None:
         if self.pending_source_file is None:
@@ -1004,7 +996,7 @@ class MotoOperatorWindow(QMainWindow):
             )
             return
         try:
-            staged_path = self._stage_source_file(self.pending_source_file)
+            staged_path, scan_result = self._stage_source_file(self.pending_source_file)
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -1013,28 +1005,34 @@ class MotoOperatorWindow(QMainWindow):
             )
             return
         self.csv_path.setText(str(staged_path))
-        self._refresh_staged_snapshots(select_snapshot=staged_path.stem)
+        self._refresh_staged_snapshots(select_snapshot=scan_result.snapshot_date)
         if self.selected_source_label is not None:
-            self.selected_source_label.setText(f"{self.pending_source_file.name} staged as {staged_path.name}")
+            self.selected_source_label.setText(
+                f"{self.pending_source_file.name} staged as {staged_path.name} using signature date {scan_result.snapshot_date}."
+            )
+            
 
-    def _stage_source_file(self, source_path: Path) -> Path:
+    def _stage_source_file(self, source_path: Path) -> tuple[Path, WeeklyCsvScanResult]:
         if not source_path.exists():
             raise FileNotFoundError(source_path)
         if source_path.suffix.lower() != ".csv":
             raise ValueError("The selected file is not a CSV. Choose a .csv export before starting the run.")
+        scan_result = self.pending_scan_result
+        if scan_result is None or self.pending_source_file != source_path:
+            scan_result = scan_weekly_csv(source_path)
         self.config.intake_dir.mkdir(parents=True, exist_ok=True)
-        target_path = self._staged_target_path()
+        target_path = self._staged_target_path(scan_result.snapshot_date)
         resolved_source = source_path.resolve()
         resolved_target = target_path.resolve()
         if resolved_source == resolved_target:
-            return target_path
+            return target_path, scan_result
         if target_path.exists():
             target_path.unlink()
         if source_path.parent == self.config.intake_dir and source_path.exists():
             shutil.move(str(source_path), str(target_path))
-            return target_path
+            return target_path, scan_result
         shutil.copy2(source_path, target_path)
-        return target_path
+        return target_path, scan_result
 
     def _refresh_staged_snapshots(self, select_snapshot: str | None = None) -> None:
         current_snapshot = select_snapshot or self.run_snapshot_selector.currentText()
@@ -1077,7 +1075,10 @@ class MotoOperatorWindow(QMainWindow):
             QMessageBox.critical(self, APP_TITLE, operator_message_for_exception(exc))
             return
         self._refresh_staged_snapshots()
-        self.csv_path.setText(str(self._staged_target_path()))
+        if self.pending_scan_result is not None:
+            self.csv_path.setText(str(self._staged_target_path(self.pending_scan_result.snapshot_date)))
+        else:
+            self.csv_path.setText("")
         if self.selected_source_label is not None:
             self.selected_source_label.setText(f"Removed staged intake file {removed_path.name}.")
         QMessageBox.information(
@@ -1107,6 +1108,11 @@ class MotoOperatorWindow(QMainWindow):
                 "The selected staged snapshot file does not exist. Stage the CSV again or choose another staged snapshot.",
             )
             return
+        try:
+            scan_result = scan_weekly_csv(source_file)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_TITLE, operator_message_for_exception(exc))
+            return
         db_path = self.config.database_path
         if not self.replace_snapshot.isChecked():
             duplicate_message = duplicate_snapshot_message(db_path, source_file)
@@ -1129,7 +1135,7 @@ class MotoOperatorWindow(QMainWindow):
                     "Core reference data is missing in this app database. Enable admin controls and use 'Refresh reference data before run' before generating reports.",
                 )
                 return
-        turnover_status = get_turnover_reference_status(db_path, snapshot_date=source_file.stem)
+        turnover_status = get_turnover_reference_status(db_path, snapshot_date=scan_result.snapshot_date)
         if turnover_status.is_missing_expected_month:
             latest_text = turnover_status.latest_period_month or "none loaded yet"
             answer = QMessageBox.question(
@@ -1148,7 +1154,7 @@ class MotoOperatorWindow(QMainWindow):
 
         self.start_button.setEnabled(False)
         self.run_summary.setText(
-            f"Run started for snapshot {source_file.stem} from staged intake file {source_file.name}. Waiting for backend progress..."
+            f"Run started for snapshot {scan_result.snapshot_date} from staged intake file {source_file.name}. Waiting for backend progress..."
         )
         self.worker = RunWorker(
             config=self.config,

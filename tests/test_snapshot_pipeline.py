@@ -26,7 +26,7 @@ def pipeline_snapshot_db(monkeypatch: pytest.MonkeyPatch) -> Path:
     work_root = ROOT / "database" / "_test_work" / str(uuid.uuid4())
     db_path = work_root / "snapshot_test.db"
     raw_dir = work_root / "raw"
-    staged_fixture = work_root / "2026-02-10.csv"
+    staged_fixture = work_root / "weekly_upload.csv"
 
     try:
         work_root.mkdir(parents=True, exist_ok=True)
@@ -41,7 +41,7 @@ def pipeline_snapshot_db(monkeypatch: pytest.MonkeyPatch) -> Path:
 
         monkeypatch.setattr("moto_app.transform.service.current_utc_year", lambda: 2026)
 
-        ingest_weekly_csv(
+        ingest_result = ingest_weekly_csv(
             db_path=db_path,
             source_file=staged_fixture,
             raw_dir=raw_dir,
@@ -49,7 +49,7 @@ def pipeline_snapshot_db(monkeypatch: pytest.MonkeyPatch) -> Path:
         )
         build_silver_snapshot(
             db_path=db_path,
-            snapshot_date="2026-02-10",
+            snapshot_date=ingest_result.snapshot_date,
             replace_snapshot=True,
         )
         build_gold_marts(db_path=db_path)
