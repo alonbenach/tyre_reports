@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import date
 
 from PySide6.QtCore import QThread, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QPalette, QTextCursor
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPalette, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -66,6 +66,7 @@ from moto_app.reference_data import (
 )
 from moto_app.ui.content import APP_TITLE, INSTRUCTIONS_TEXT
 
+WINDOWS_APP_ID = "MotoWeeklyOperator.DesktopApp"
 REPORT_OPTIONS = [
     ("positioning", "Price Positioning"),
     ("offeror_focus", "Offeror Focus"),
@@ -182,6 +183,9 @@ class MotoOperatorWindow(QMainWindow):
         self.setWindowTitle(APP_TITLE)
         self.resize(1220, 800)
         self.setMinimumSize(1080, 700)
+        app_icon = _load_app_icon(config)
+        if not app_icon.isNull():
+            self.setWindowIcon(app_icon)
         self._apply_palette()
         self._build_ui()
         self._initialize_access_mode()
@@ -1335,7 +1339,32 @@ def launch_operator_ui(
             migrations_dir=config.migrations_dir,
         )
     )
+    _set_windows_app_id()
     app = QApplication.instance() or QApplication(sys.argv)
+    app.setApplicationName(APP_TITLE)
+    app_icon = _load_app_icon(config)
+    if not app_icon.isNull():
+        app.setWindowIcon(app_icon)
     window = MotoOperatorWindow(config)
     window.showMaximized()
     app.exec()
+
+
+def _load_app_icon(config: AppConfig) -> QIcon:
+    for icon_name in ("app_icon.png", "app_icon.ico"):
+        icon_path = config.assets_dir / icon_name
+        if icon_path.exists():
+            return QIcon(str(icon_path))
+    return QIcon()
+
+
+def _set_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    except Exception:
+        # Icon loading should still work even if Windows ignores the explicit app id.
+        pass
