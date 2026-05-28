@@ -174,6 +174,23 @@ def _safe_float(value: object) -> float:
         return np.nan
 
 
+def _rank_price_setting_sellers(latest_size: pd.DataFrame) -> pd.DataFrame:
+    """Rank sellers by median price, using stock only as a tie-breaker."""
+    return (
+        latest_size.groupby("seller_norm", dropna=False)
+        .agg(
+            stock_qty=("stock_qty", "sum"),
+            median_price=("price_pln", "median"),
+        )
+        .reset_index()
+        .sort_values(
+            ["median_price", "stock_qty", "seller_norm"],
+            ascending=[True, False, True],
+            na_position="last",
+        )
+    )
+
+
 def _campaign_discount_pct(
     seller_name: object,
     is_extra_set: bool,
@@ -366,12 +383,7 @@ def _build_page1_table(
                 )
                 continue
 
-            seller_rank = (
-                latest_size.groupby("seller_norm", dropna=False)["stock_qty"]
-                .sum()
-                .reset_index()
-                .sort_values("stock_qty", ascending=False)
-            )
+            seller_rank = _rank_price_setting_sellers(latest_size)
             first_player = _mode_or_dash(seller_rank.head(1)["seller_norm"])
             latest_seller = latest_size[latest_size["seller_norm"] == first_player].copy()
             stock = float(latest_seller["stock_qty"].sum())
