@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title>Moto Weekly Operator icon</title>
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="#17313b"/>
+  <circle cx="76" cy="176" r="26" fill="none" stroke="#f5f1e8" stroke-width="12"/>
+  <circle cx="180" cy="176" r="26" fill="none" stroke="#f5f1e8" stroke-width="12"/>
+  <path
+    d="M97 174h32l24-38h30l22 38M115 136l23-22h34"
+    fill="none"
+    stroke="#f5f1e8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="14"
+  />
+  <path
+    d="M102 128h30l12 18"
+    fill="none"
+    stroke="#5ec2af"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="14"
+  />
+  <circle cx="161" cy="116" r="10" fill="#5ec2af"/>
+</svg>

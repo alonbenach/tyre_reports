@@ -7,6 +7,7 @@ PROJECT_ROOT = Path.cwd()
 ENTRYPOINT = PROJECT_ROOT / "database" / "tools" / "run_app_prod.py"
 ASSETS_DIR = PROJECT_ROOT / "assets"
 MIGRATIONS_DIR = PROJECT_ROOT / "database" / "migrations"
+ICON_PATH = PROJECT_ROOT / "assets" / "app_icon.ico"
 
 datas = []
 if ASSETS_DIR.exists():
@@ -41,6 +42,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(ICON_PATH) if ICON_PATH.exists() else None,
 )
 
 coll = COLLECT(

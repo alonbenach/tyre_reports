@@ -33,7 +33,7 @@ class BackendPipelineTests(unittest.TestCase):
         tmp_root = ROOT / "database" / "_test_work" / str(uuid.uuid4())
         tmp_root.mkdir(parents=True, exist_ok=True)
         db_path = tmp_root / "moto_pipeline_test.db"
-        source_file = tmp_root / "2026-02-10.csv"
+        source_file = tmp_root / "weekly_upload.csv"
         raw_dir = tmp_root / "raw"
         report_dir = tmp_root / "reports"
         log_dir = tmp_root / "logs"
@@ -69,7 +69,7 @@ class BackendPipelineTests(unittest.TestCase):
             status = latest_run_status(db_path)
             self.assertEqual("succeeded", status.status)
             self.assertEqual(result.run_id, status.run_id)
-            self.assertEqual("2026-02-10", result.snapshot_date)
+            self.assertEqual("2026-02-09", result.snapshot_date)
             self.assertTrue((log_dir / f"{result.run_id}.log").exists())
             self.assertTrue(result.generated_files)
             for path in result.generated_files:
@@ -96,7 +96,7 @@ class BackendPipelineTests(unittest.TestCase):
                     replace_snapshot=True,
                     refresh_references=False,
                 )
-            self.assertEqual("2026-02-10", first.snapshot_date)
+            self.assertEqual("2026-02-09", first.snapshot_date)
 
             with patch(
                 "moto_app.app.service.get_core_reference_status",
